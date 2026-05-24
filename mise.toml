@@ -1,0 +1,108 @@
+[tools]
+go = "1.26.1"
+"go:golang.org/x/tools/cmd/goimports" = "latest"
+node = "22"
+air = "latest"
+pnpm = "10.33.0"
+
+[tasks.tidy]
+run = "go mod tidy"
+
+[tasks.build]
+run = "go build ./..."
+
+[tasks.docker-build]
+run = """
+  GO_VERSION=$(mise current go | grep -oE '^[0-9]+\\.[0-9]+')
+  docker build --build-arg GO_VERSION="${GO_VERSION}" .
+"""
+
+[tasks.test]
+run = "go test ./..."
+
+[tasks.format]
+run = "goimports -w ."
+
+[tasks.dev]
+run = """
+  mise run dev-backend &
+  mise run dev-frontend &
+  wait
+"""
+
+[tasks.dev-backend]
+run = "air"
+
+[tasks.dev-frontend]
+run = "pnpm dev"
+dir = "{{config_root}}/cmd/server/frontend"
+
+[tasks.ci]
+depends = ["ci-backend", "ci-frontend"]
+
+[tasks.ci-backend]
+run = """
+  mise run ci-deps-backend &&
+  mise run ci-fmt-backend &&
+  mise run ci-lint-backend &&
+  mise run ci-test-backend &&
+  mise run ci-build-backend
+"""
+
+[tasks.ci-deps-backend]
+run = "node --experimental-strip-types scripts/check_deps_age_backend.ts"
+
+[tasks.ci-fmt-backend]
+run = "goimports -l . | grep -q . && echo 'format check failed' && exit 1 || true"
+
+[tasks.ci-lint-backend]
+run = "go vet ./..."
+
+[tasks.ci-test-backend]
+run = "go test ./..."
+
+[tasks.ci-build-backend]
+run = "go build ./..."
+
+[tasks.ci-install-frontend]
+run = "pnpm install --frozen-lockfile"
+dir = "{{config_root}}/cmd/server/frontend"
+
+[tasks.ci-deps-frontend]
+run = "node --experimental-strip-types scripts/sync-frontend.ts"
+
+[tasks.format-frontend]
+run = "pnpm run format"
+dir = "{{config_root}}/cmd/server/frontend"
+
+[tasks.ci-fmt-frontend]
+run = "pnpm run format:check"
+dir = "{{config_root}}/cmd/server/frontend"
+
+[tasks.ci-lint-frontend]
+run = "pnpm run lint"
+dir = "{{config_root}}/cmd/server/frontend"
+
+[tasks.ci-test-frontend]
+run = "pnpm run test"
+dir = "{{config_root}}/cmd/server/frontend"
+
+[tasks.ci-build-frontend]
+run = "pnpm run build"
+dir = "{{config_root}}/cmd/server/frontend"
+
+[tasks.ci-frontend]
+run = """
+  mise run ci-install-frontend &&
+  mise run ci-deps-frontend &&
+  mise run ci-fmt-frontend &&
+  mise run ci-lint-frontend &&
+  mise run ci-test-frontend &&
+  mise run ci-build-frontend
+"""
+
+[tasks.pre-merge]
+run = """
+  mise run format &&
+  mise run ci
+"""

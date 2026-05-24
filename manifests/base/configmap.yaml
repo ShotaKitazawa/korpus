@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: korpus-config
+data:
+  korpus.yaml: |
+    apiVersion: korpus.io/v1alpha1
+    kind: KorpusConfig
+    spec:
+      git:
+        repo: https://github.com/OWNER/REPO
+        branch: main
+        subDir: cluster
+        token: ${GIT_TOKEN}
+        author:
+          name: backup-bot
+          email: backup-bot@github.com
+
+      backup:
+        schedule: "*/10 * * * *"
+        defaultExcludeFields:
+          - metadata.resourceVersion
+          - metadata.managedFields
+          - metadata.generation
+          - metadata.annotations["kubectl.kubernetes.io/last-applied-configuration"]
+
+        resources: []
+        # Example: exclude environment-specific high-churn CRDs
+        # resources:
+        #   - match: ciliumidentities.cilium.io
+        #     exclude: true
+
+  server.yaml: |
+    apiVersion: korpus.io/v1alpha1
+    kind: ServerConfig
+    spec:
+      addr: ":8080"
+      pullInterval: "10m"
+      clusters:
+        - name: default
+          git:
+            repo: https://github.com/OWNER/REPO
+            branch: main
+            subDir: cluster
+            token: ${GIT_TOKEN}
+            author:
+              name: korpus-bot
+              email: korpus-bot@github.com
+      index:
+        fields:
+          # removing metadata.labels causes disk I/O on label queries
+          - metadata.labels
+          - metadata.creationTimestamp

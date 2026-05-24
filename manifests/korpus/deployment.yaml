@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: korpus
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: korpus
+  template:
+    metadata:
+      labels:
+        app: korpus
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: korpus
+          # renovate: type=docker-image
+          image: ghcr.io/shotakitazawa/korpus:latest
+          args: ["--config", "/mnt/config/korpus.yaml"]
+          ports:
+            - containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          env:
+            - name: GIT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: korpus
+                  key: GIT_TOKEN
+          volumeMounts:
+            - name: config
+              mountPath: /mnt/config
+      volumes:
+        - name: config
+          configMap:
+            name: korpus-config

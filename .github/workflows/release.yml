@@ -1,0 +1,34 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-kubectl@v4
+
+      - name: Install kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Set image tags in manifests
+        working-directory: manifests
+        run: |
+          kustomize edit set image ghcr.io/${{ github.repository }}=ghcr.io/${{ github.repository }}:release-${{ github.ref_name }}
+          kustomize edit set image ghcr.io/${{ github.repository }}-server=ghcr.io/${{ github.repository }}-server:release-${{ github.ref_name }}
+
+      - name: Build install.yaml
+        run: kustomize build ./manifests > install.yaml
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: install.yaml
+          generate_release_notes: true

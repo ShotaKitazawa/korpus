@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: korpus-server
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: korpus-server
+  template:
+    metadata:
+      labels:
+        app: korpus-server
+    spec:
+      containers:
+        - name: server
+          # renovate: type=docker-image
+          image: ghcr.io/shotakitazawa/korpus-server:latest
+          args: ["--config", "/mnt/config/server.yaml"]
+          ports:
+            - containerPort: 8080
+          env:
+            - name: GIT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: korpus
+                  key: GIT_TOKEN
+          volumeMounts:
+            - name: config
+              mountPath: /mnt/config
+      volumes:
+        - name: config
+          configMap:
+            name: korpus-config

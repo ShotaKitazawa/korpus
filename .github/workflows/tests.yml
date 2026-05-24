@@ -1,0 +1,27 @@
+name: Tests
+
+on:
+  push:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ hashFiles('go.sum') }}
+          restore-keys: go-
+
+      - run: mise run ci
+
+      - run: mise run pre-merge
+
+      - name: Check no uncommitted changes
+        run: git diff --exit-code

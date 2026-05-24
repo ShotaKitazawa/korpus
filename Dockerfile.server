@@ -1,0 +1,22 @@
+ARG GO_VERSION
+ARG NODE_VERSION
+
+FROM node:${NODE_VERSION}-alpine AS frontend-builder
+WORKDIR /app
+COPY cmd/server/frontend/package.json cmd/server/frontend/pnpm-lock.yaml cmd/server/frontend/pnpm-workspace.yaml ./
+RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+    corepack enable pnpm && pnpm install --frozen-lockfile
+COPY cmd/server/frontend/ ./
+RUN pnpm run build
+
+FROM golang:${GO_VERSION}-alpine AS go-builder
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+COPY --from=frontend-builder /app/dist ./cmd/server/frontend/dist
+RUN CGO_ENABLED=0 go build -trimpath -o server ./cmd/server
+
+FROM gcr.io/distroless/static:nonroot
+COPY --from=go-builder /app/server /server
+ENTRYPOINT ["/server"]
