@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react"
 import ClusterList from "./components/ClusterList.tsx"
+import KindSelect from "./components/KindSelect.tsx"
 import NamespaceList from "./components/NamespaceList.tsx"
-import ResourceList from "./components/ResourceList.tsx"
 import ResourceDetail from "./components/ResourceDetail.tsx"
+import ResourceList from "./components/ResourceList.tsx"
 import SearchBar from "./components/SearchBar.tsx"
 
 export interface ResourceMeta {
@@ -18,6 +19,7 @@ export default function App() {
   const [selectedCluster, setSelectedCluster] = useState("")
   const [namespaces, setNamespaces] = useState<string[]>([])
   const [selectedNamespace, setSelectedNamespace] = useState("")
+  const [kinds, setKinds] = useState<string[]>([])
   const [selectedKind, setSelectedKind] = useState("")
   const [resources, setResources] = useState<ResourceMeta[]>([])
   const [selected, setSelected] = useState<ResourceMeta | null>(null)
@@ -39,6 +41,16 @@ export default function App() {
       .then(setNamespaces)
       .catch(console.error)
   }, [selectedCluster])
+
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (selectedCluster) params.set("cluster", selectedCluster)
+    if (selectedNamespace) params.set("namespace", selectedNamespace)
+    fetch(`/api/kinds?${params}`)
+      .then((r) => r.json())
+      .then(setKinds)
+      .catch(console.error)
+  }, [selectedCluster, selectedNamespace])
 
   useEffect(() => {
     if (selectedKind && searchQuery) {
@@ -125,11 +137,13 @@ export default function App() {
             gap: 8,
           }}
         >
-          <input
-            placeholder="kind"
+          <KindSelect
+            kinds={kinds}
             value={selectedKind}
-            onChange={(e) => setSelectedKind(e.target.value)}
-            style={{ width: 120 }}
+            onChange={(k) => {
+              setSelectedKind(k)
+              setSelected(null)
+            }}
           />
           <SearchBar
             query={searchQuery}

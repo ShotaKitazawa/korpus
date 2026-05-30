@@ -144,6 +144,23 @@ func buildMux(cfg *config.ServerConfig, indices map[string]*index.Index, logger 
 		jsonResponse(w, clusterNames)
 	})
 
+	mux.HandleFunc("GET /api/kinds", func(w http.ResponseWriter, r *http.Request) {
+		cluster := r.URL.Query().Get("cluster")
+		ns := r.URL.Query().Get("namespace")
+		seen := make(map[string]struct{})
+		for _, idx := range resolveIndices(cluster, indices) {
+			for _, k := range idx.Kinds(ns) {
+				seen[k] = struct{}{}
+			}
+		}
+		result := make([]string, 0, len(seen))
+		for k := range seen {
+			result = append(result, k)
+		}
+		sort.Strings(result)
+		jsonResponse(w, result)
+	})
+
 	mux.HandleFunc("GET /api/namespaces", func(w http.ResponseWriter, r *http.Request) {
 		cluster := r.URL.Query().Get("cluster")
 		seen := make(map[string]struct{})
@@ -250,6 +267,27 @@ func buildMCPServer(indices map[string]*index.Index, clusterNames []string) http
 		mcp.WithDescription("List all cluster names"),
 	), func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return mcp.NewToolResultText(mustJSON(clusterNames)), nil
+	})
+
+	s.AddTool(mcp.NewTool("list_kinds",
+		mcp.WithDescription("List all resource kinds, optionally filtered by cluster and/or namespace"),
+		mcp.WithString("cluster", mcp.Description("Cluster name (optional, omit for all clusters)")),
+		mcp.WithString("namespace", mcp.Description("Namespace to filter by (optional)")),
+	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		cluster, _ := args["cluster"].(string)
+		ns, _ := args["namespace"].(string)
+		seen := make(map[string]struct{})
+		for _, idx := range resolveIndices(cluster, indices) {
+			for _, k := range idx.Kinds(ns) {
+				seen[k] = struct{}{}
+			}
+		}
+		result := make([]string, 0, len(seen))
+		for k := range seen {
+			result = append(result, k)
+		}
+		return mcp.NewToolResultText(mustJSON(result)), nil
 	})
 
 	s.AddTool(mcp.NewTool("list_namespaces",

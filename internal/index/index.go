@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -111,6 +112,25 @@ func (idx *Index) Build(dir string) error {
 	idx.resources = result
 	idx.mu.Unlock()
 	return nil
+}
+
+// Kinds returns the sorted unique list of resource kinds in the index, optionally filtered by namespace.
+func (idx *Index) Kinds(namespace string) []string {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	seen := make(map[string]struct{})
+	for _, r := range idx.resources {
+		if namespace != "" && r.Namespace != namespace {
+			continue
+		}
+		seen[r.Kind] = struct{}{}
+	}
+	result := make([]string, 0, len(seen))
+	for k := range seen {
+		result = append(result, k)
+	}
+	sort.Strings(result)
+	return result
 }
 
 // Namespaces returns the sorted unique list of namespaces in the index.

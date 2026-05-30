@@ -61,6 +61,18 @@ func TestNamespaces(t *testing.T) {
 	assert.ElementsMatch(t, []string{"default", "kube-system"}, ns)
 }
 
+func TestKinds_All(t *testing.T) {
+	_, idx := setup(t)
+	kinds := idx.Kinds("")
+	assert.ElementsMatch(t, []string{"Deployment", "Node", "Pod"}, kinds)
+}
+
+func TestKinds_ByNamespace(t *testing.T) {
+	_, idx := setup(t)
+	kinds := idx.Kinds("default")
+	assert.Equal(t, []string{"Pod"}, kinds)
+}
+
 func TestList_ByKind(t *testing.T) {
 	_, idx := setup(t)
 	pods := idx.List("Pod", "")
