@@ -31,13 +31,16 @@ import (
 //go:embed all:frontend/dist
 var frontendDist embed.FS
 
-// ClusterState bundles the in-memory index and the git client for one cluster.
+// ClusterState bundles the in-memory index, the git client, and pull status for one cluster.
 type ClusterState struct {
 	idx *index.Index
 
-	mu      sync.RWMutex
-	gc      *gitclient.Client
-	workDir string
+	mu            sync.RWMutex
+	gc            *gitclient.Client
+	workDir       string
+	lastPullAt    *time.Time
+	lastPullErr   string
+	resourceCount int
 }
 
 func (s *ClusterState) setGit(gc *gitclient.Client, workDir string) {
@@ -45,6 +48,46 @@ func (s *ClusterState) setGit(gc *gitclient.Client, workDir string) {
 	defer s.mu.Unlock()
 	s.gc = gc
 	s.workDir = workDir
+}
+
+func (s *ClusterState) recordPull(err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().UTC()
+	s.lastPullAt = &now
+	if err != nil {
+		s.lastPullErr = err.Error()
+	} else {
+		s.lastPullErr = ""
+		s.resourceCount = len(s.idx.List("", ""))
+	}
+}
+
+func (s *ClusterState) status() clusterStatus {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	cs := clusterStatus{
+		LastPullErr:   s.lastPullErr,
+		ResourceCount: s.resourceCount,
+	}
+	if s.lastPullAt != nil {
+		t := *s.lastPullAt
+		cs.LastPullAt = &t
+	}
+	return cs
+}
+
+func (s *ClusterState) ready() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.lastPullAt != nil && s.lastPullErr == ""
+}
+
+type clusterStatus struct {
+	Name          string     `json:"name"`
+	LastPullAt    *time.Time `json:"lastPullAt"`
+	LastPullErr   string     `json:"lastPullErr"`
+	ResourceCount int        `json:"resourceCount"`
 }
 
 // relPath converts an absolute file path into a repo-relative path using forward slashes.
@@ -119,8 +162,11 @@ func main() {
 			state.setGit(gc, workDir)
 
 			indexDir := filepath.Join(workDir, c.Git.SubDir)
-			if err := state.idx.Build(indexDir); err != nil {
-				logger.Warn("index build", "cluster", c.Name, "err", err)
+			if buildErr := state.idx.Build(indexDir); buildErr != nil {
+				logger.Warn("index build", "cluster", c.Name, "err", buildErr)
+				state.recordPull(buildErr)
+			} else {
+				state.recordPull(nil)
 			}
 
 			ticker := time.NewTicker(cfg.Spec.PullIntervalDuration())
@@ -131,24 +177,30 @@ func main() {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					if err := gc.Pull(); err != nil {
-						logger.Warn("pull failed, re-cloning", "cluster", c.Name, "err", err)
+					pullErr := gc.Pull()
+					if pullErr != nil {
+						logger.Warn("pull failed, re-cloning", "cluster", c.Name, "err", pullErr)
 						os.RemoveAll(workDir)
 						workDir, err = os.MkdirTemp("", "korpus-server-"+c.Name+"-*")
 						if err != nil {
 							logger.Error("create work dir on re-clone", "cluster", c.Name, "err", err)
+							state.recordPull(err)
 							continue
 						}
 						gc, err = gitclient.Clone(ctx, c.Git.Repo, c.Git.Branch, c.Git.Token, workDir, 0)
 						if err != nil {
 							logger.Error("re-clone failed", "cluster", c.Name, "err", err)
+							state.recordPull(err)
 							continue
 						}
 						state.setGit(gc, workDir)
 					}
 					indexDir = filepath.Join(workDir, c.Git.SubDir)
-					if err := state.idx.Build(indexDir); err != nil {
-						logger.Warn("index rebuild", "cluster", c.Name, "err", err)
+					if buildErr := state.idx.Build(indexDir); buildErr != nil {
+						logger.Warn("index rebuild", "cluster", c.Name, "err", buildErr)
+						state.recordPull(buildErr)
+					} else {
+						state.recordPull(nil)
 					}
 				}
 			}
@@ -193,6 +245,27 @@ func buildMux(cfg *config.ServerConfig, states map[string]*ClusterState, logger 
 	for _, c := range cfg.Spec.Clusters {
 		clusterNames = append(clusterNames, c.Name)
 	}
+
+	// Health / status
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		for _, st := range states {
+			if !st.ready() {
+				http.Error(w, "not ready", http.StatusServiceUnavailable)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
+		result := make([]clusterStatus, 0, len(cfg.Spec.Clusters))
+		for _, c := range cfg.Spec.Clusters {
+			cs := states[c.Name].status()
+			cs.Name = c.Name
+			result = append(result, cs)
+		}
+		jsonResponse(w, map[string]any{"clusters": result})
+	})
 
 	// API
 	mux.HandleFunc("GET /api/clusters", func(w http.ResponseWriter, r *http.Request) {
