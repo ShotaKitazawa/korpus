@@ -179,7 +179,7 @@ func (r *runner) runOnce(ctx context.Context) error {
 	}
 	r.logger.Info("backup committed", "message", msg)
 
-	if err := churn.Analyze(r.workDir, 10, r.cfg.Spec.Git.SubDir, r.logger); err != nil {
+	if err := churn.Analyze(r.workDir, r.cfg.Spec.Churn.Lookback, r.cfg.Spec.Git.SubDir, r.cfg.Spec.Churn.Threshold, r.logger); err != nil {
 		r.logger.Warn("churn analysis", "err", err)
 	}
 	return nil

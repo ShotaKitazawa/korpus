@@ -49,7 +49,7 @@ func TestAnalyze_HighChurn(t *testing.T) {
 	}})
 
 	dir := makeTestRepo(t, subDir, commitFiles)
-	require.NoError(t, Analyze(dir, 3, subDir, logger))
+	require.NoError(t, Analyze(dir, 3, subDir, 1.0, logger))
 	assert.Contains(t, warned, "deployments")
 }
 
@@ -72,8 +72,35 @@ func TestAnalyze_NoChurn(t *testing.T) {
 	}})
 
 	dir := makeTestRepo(t, subDir, commitFiles)
-	require.NoError(t, Analyze(dir, 3, subDir, logger))
+	require.NoError(t, Analyze(dir, 3, subDir, 1.0, logger))
 	assert.Empty(t, warned)
+}
+
+func TestAnalyze_PartialThreshold(t *testing.T) {
+	subDir := "backup"
+	// 3 commits, deployments appears in 2 of 3 → flagged at threshold=0.5, not at 1.0
+	commitFiles := [][]string{
+		{subDir + "/cluster-wide/deployments.yaml"},
+		{subDir + "/cluster-wide/deployments.yaml"},
+		{subDir + "/cluster-wide/pods.yaml"},
+	}
+
+	warned := func(threshold float64) []string {
+		var out []string
+		logger := slog.New(&captureHandler{fn: func(_ string, attrs []slog.Attr) {
+			for _, a := range attrs {
+				if a.Key == "resource" {
+					out = append(out, a.Value.String())
+				}
+			}
+		}})
+		dir := makeTestRepo(t, subDir, commitFiles)
+		require.NoError(t, Analyze(dir, 3, subDir, threshold, logger))
+		return out
+	}
+
+	assert.Contains(t, warned(0.5), "deployments")
+	assert.Empty(t, warned(1.0))
 }
 
 // makeTestRepo creates a git repo where each commitFiles[i] is staged and committed.

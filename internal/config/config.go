@@ -26,6 +26,12 @@ type KorpusConfig struct {
 type KorpusSpec struct {
 	Git    GitConfig    `yaml:"git"`
 	Backup BackupConfig `yaml:"backup"`
+	Churn  ChurnConfig  `yaml:"churn"`
+}
+
+type ChurnConfig struct {
+	Lookback  int     `yaml:"lookback"`
+	Threshold float64 `yaml:"threshold"`
 }
 
 // ServerConfig is the configuration for the server viewer.
@@ -133,6 +139,12 @@ func LoadKorpus(path string) (*KorpusConfig, error) {
 	}
 	if _, err := cron.ParseStandard(cfg.Spec.Backup.Schedule); err != nil {
 		return nil, fmt.Errorf("invalid spec.backup.schedule %q: %w", cfg.Spec.Backup.Schedule, err)
+	}
+	if cfg.Spec.Churn.Lookback == 0 {
+		cfg.Spec.Churn.Lookback = 10
+	}
+	if cfg.Spec.Churn.Threshold == 0 {
+		cfg.Spec.Churn.Threshold = 1.0
 	}
 	return &cfg, nil
 }

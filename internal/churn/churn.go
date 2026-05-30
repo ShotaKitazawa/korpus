@@ -3,6 +3,7 @@ package churn
 import (
 	"fmt"
 	"log/slog"
+	"math"
 	"os/exec"
 	"strings"
 )
@@ -10,8 +11,8 @@ import (
 const commitMarker = "---KORPUS-COMMIT---"
 
 // Analyze inspects the last n commits in repoPath and warns about high-churn resources.
-// A resource is flagged if it appears in every one of the last n commits.
-func Analyze(repoPath string, n int, subDir string, logger *slog.Logger) error {
+// A resource is flagged if it appears in at least threshold fraction of the inspected commits.
+func Analyze(repoPath string, n int, subDir string, threshold float64, logger *slog.Logger) error {
 	out, err := exec.Command("git", "-C", repoPath, "log",
 		fmt.Sprintf("-n%d", n),
 		"--pretty=format:"+commitMarker,
@@ -59,8 +60,9 @@ func Analyze(repoPath string, n int, subDir string, logger *slog.Logger) error {
 		}
 	}
 
+	minCount := int(math.Ceil(float64(total) * threshold))
 	for res, count := range counts {
-		if count == total {
+		if count >= minCount {
 			logger.Warn("high-churn resource detected",
 				"resource", res,
 				"changed", fmt.Sprintf("%d/%d", count, total),
