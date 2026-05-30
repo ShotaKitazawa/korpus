@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -11,13 +12,16 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"embed"
 
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
+	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/ShotaKitazawa/korpus/internal/config"
 	"github.com/ShotaKitazawa/korpus/internal/gitclient"
@@ -26,6 +30,53 @@ import (
 
 //go:embed all:frontend/dist
 var frontendDist embed.FS
+
+// ClusterState bundles the in-memory index and the git client for one cluster.
+type ClusterState struct {
+	idx *index.Index
+
+	mu      sync.RWMutex
+	gc      *gitclient.Client
+	workDir string
+}
+
+func (s *ClusterState) setGit(gc *gitclient.Client, workDir string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.gc = gc
+	s.workDir = workDir
+}
+
+// relPath converts an absolute file path into a repo-relative path using forward slashes.
+func (s *ClusterState) relPath(absPath string) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	rel := strings.TrimPrefix(absPath, s.workDir+string(filepath.Separator))
+	if rel == absPath {
+		return ""
+	}
+	return filepath.ToSlash(rel)
+}
+
+func (s *ClusterState) history(relPath string, n int) ([]gitclient.HistoryEntry, error) {
+	s.mu.RLock()
+	gc := s.gc
+	s.mu.RUnlock()
+	if gc == nil {
+		return nil, fmt.Errorf("cluster not ready")
+	}
+	return gc.FileHistory(relPath, n)
+}
+
+func (s *ClusterState) fileAt(relPath, sha string) (string, error) {
+	s.mu.RLock()
+	gc := s.gc
+	s.mu.RUnlock()
+	if gc == nil {
+		return "", fmt.Errorf("cluster not ready")
+	}
+	return gc.FileAtCommit(relPath, sha)
+}
 
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to config file")
@@ -41,15 +92,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	indices := make(map[string]*index.Index, len(cfg.Spec.Clusters))
+	states := make(map[string]*ClusterState, len(cfg.Spec.Clusters))
 	for _, c := range cfg.Spec.Clusters {
-		indices[c.Name] = index.New(c.Name, cfg.Spec.Index.Fields)
+		states[c.Name] = &ClusterState{
+			idx: index.New(c.Name, cfg.Spec.Index.Fields),
+		}
 	}
 
 	// Start one pull goroutine per cluster.
 	for _, clusterCfg := range cfg.Spec.Clusters {
 		c := clusterCfg
-		idx := indices[c.Name]
+		state := states[c.Name]
 		go func() {
 			workDir, err := os.MkdirTemp("", "korpus-server-"+c.Name+"-*")
 			if err != nil {
@@ -58,14 +111,15 @@ func main() {
 			}
 			defer os.RemoveAll(workDir)
 
-			gc, err := gitclient.Clone(ctx, c.Git.Repo, c.Git.Branch, c.Git.Token, workDir)
+			gc, err := gitclient.Clone(ctx, c.Git.Repo, c.Git.Branch, c.Git.Token, workDir, 0)
 			if err != nil {
 				logger.Error("git clone", "cluster", c.Name, "err", err)
 				return
 			}
+			state.setGit(gc, workDir)
 
 			indexDir := filepath.Join(workDir, c.Git.SubDir)
-			if err := idx.Build(indexDir); err != nil {
+			if err := state.idx.Build(indexDir); err != nil {
 				logger.Warn("index build", "cluster", c.Name, "err", err)
 			}
 
@@ -85,14 +139,15 @@ func main() {
 							logger.Error("create work dir on re-clone", "cluster", c.Name, "err", err)
 							continue
 						}
-						gc, err = gitclient.Clone(ctx, c.Git.Repo, c.Git.Branch, c.Git.Token, workDir)
+						gc, err = gitclient.Clone(ctx, c.Git.Repo, c.Git.Branch, c.Git.Token, workDir, 0)
 						if err != nil {
 							logger.Error("re-clone failed", "cluster", c.Name, "err", err)
 							continue
 						}
+						state.setGit(gc, workDir)
 					}
 					indexDir = filepath.Join(workDir, c.Git.SubDir)
-					if err := idx.Build(indexDir); err != nil {
+					if err := state.idx.Build(indexDir); err != nil {
 						logger.Warn("index rebuild", "cluster", c.Name, "err", err)
 					}
 				}
@@ -100,7 +155,7 @@ func main() {
 		}()
 	}
 
-	mux := buildMux(cfg, indices, logger)
+	mux := buildMux(cfg, states, logger)
 	srv := &http.Server{Addr: cfg.Spec.Addr, Handler: mux}
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -115,22 +170,22 @@ func main() {
 	srv.Shutdown(context.Background()) //nolint:errcheck
 }
 
-// resolveIndices returns the indices to query. If cluster is empty, all indices are returned.
-func resolveIndices(cluster string, indices map[string]*index.Index) []*index.Index {
+// resolveStates returns the states to query. If cluster is empty, all states are returned.
+func resolveStates(cluster string, states map[string]*ClusterState) []*ClusterState {
 	if cluster == "" {
-		result := make([]*index.Index, 0, len(indices))
-		for _, idx := range indices {
-			result = append(result, idx)
+		result := make([]*ClusterState, 0, len(states))
+		for _, st := range states {
+			result = append(result, st)
 		}
 		return result
 	}
-	if idx, ok := indices[cluster]; ok {
-		return []*index.Index{idx}
+	if st, ok := states[cluster]; ok {
+		return []*ClusterState{st}
 	}
 	return nil
 }
 
-func buildMux(cfg *config.ServerConfig, indices map[string]*index.Index, logger *slog.Logger) http.Handler {
+func buildMux(cfg *config.ServerConfig, states map[string]*ClusterState, logger *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 
 	// Cluster names list (stable order)
@@ -148,8 +203,8 @@ func buildMux(cfg *config.ServerConfig, indices map[string]*index.Index, logger 
 		cluster := r.URL.Query().Get("cluster")
 		ns := r.URL.Query().Get("namespace")
 		seen := make(map[string]struct{})
-		for _, idx := range resolveIndices(cluster, indices) {
-			for _, k := range idx.Kinds(ns) {
+		for _, st := range resolveStates(cluster, states) {
+			for _, k := range st.idx.Kinds(ns) {
 				seen[k] = struct{}{}
 			}
 		}
@@ -164,8 +219,8 @@ func buildMux(cfg *config.ServerConfig, indices map[string]*index.Index, logger 
 	mux.HandleFunc("GET /api/namespaces", func(w http.ResponseWriter, r *http.Request) {
 		cluster := r.URL.Query().Get("cluster")
 		seen := make(map[string]struct{})
-		for _, idx := range resolveIndices(cluster, indices) {
-			for _, ns := range idx.Namespaces() {
+		for _, st := range resolveStates(cluster, states) {
+			for _, ns := range st.idx.Namespaces() {
 				seen[ns] = struct{}{}
 			}
 		}
@@ -182,8 +237,8 @@ func buildMux(cfg *config.ServerConfig, indices map[string]*index.Index, logger 
 		kind := r.URL.Query().Get("kind")
 		ns := r.URL.Query().Get("namespace")
 		var result []index.ResourceMeta
-		for _, idx := range resolveIndices(cluster, indices) {
-			result = append(result, idx.List(kind, ns)...)
+		for _, st := range resolveStates(cluster, states) {
+			result = append(result, st.idx.List(kind, ns)...)
 		}
 		jsonResponse(w, result)
 	})
@@ -193,12 +248,12 @@ func buildMux(cfg *config.ServerConfig, indices map[string]*index.Index, logger 
 		kind := r.PathValue("kind")
 		ns := r.PathValue("namespace")
 		name := r.PathValue("name")
-		idx, ok := indices[cluster]
+		state, ok := states[cluster]
 		if !ok {
 			http.NotFound(w, r)
 			return
 		}
-		meta, ok := idx.Get(kind, ns, name)
+		meta, ok := state.idx.Get(kind, ns, name)
 		if !ok {
 			http.NotFound(w, r)
 			return
@@ -212,6 +267,79 @@ func buildMux(cfg *config.ServerConfig, indices map[string]*index.Index, logger 
 		w.Write(data) //nolint:errcheck
 	})
 
+	mux.HandleFunc("GET /api/resources/{cluster}/{kind}/{namespace}/{name}/history", func(w http.ResponseWriter, r *http.Request) {
+		cluster := r.PathValue("cluster")
+		kind := r.PathValue("kind")
+		ns := r.PathValue("namespace")
+		name := r.PathValue("name")
+		n := 20
+		if nStr := r.URL.Query().Get("n"); nStr != "" {
+			if parsed, err := strconv.Atoi(nStr); err == nil && parsed > 0 {
+				n = parsed
+			}
+		}
+		state, ok := states[cluster]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		meta, ok := state.idx.Get(kind, ns, name)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		relPath := state.relPath(meta.FilePath)
+		if relPath == "" {
+			http.Error(w, "cannot determine git path", http.StatusInternalServerError)
+			return
+		}
+		entries, err := state.history(relPath, n)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		jsonResponse(w, entries)
+	})
+
+	mux.HandleFunc("GET /api/resources/{cluster}/{kind}/{namespace}/{name}/diff", func(w http.ResponseWriter, r *http.Request) {
+		cluster := r.PathValue("cluster")
+		kind := r.PathValue("kind")
+		ns := r.PathValue("namespace")
+		name := r.PathValue("name")
+		fromSHA := r.URL.Query().Get("from")
+		toSHA := r.URL.Query().Get("to")
+		if fromSHA == "" || toSHA == "" {
+			http.Error(w, "from and to are required", http.StatusBadRequest)
+			return
+		}
+		state, ok := states[cluster]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		meta, ok := state.idx.Get(kind, ns, name)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		relPath := state.relPath(meta.FilePath)
+		if relPath == "" {
+			http.Error(w, "cannot determine git path", http.StatusInternalServerError)
+			return
+		}
+		before, err := state.fileAt(relPath, fromSHA)
+		if err != nil {
+			http.Error(w, "from: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		after, err := state.fileAt(relPath, toSHA)
+		if err != nil {
+			http.Error(w, "to: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		jsonResponse(w, map[string]string{"before": before, "after": after})
+	})
+
 	mux.HandleFunc("GET /api/query", func(w http.ResponseWriter, r *http.Request) {
 		kind := r.URL.Query().Get("kind")
 		if kind == "" {
@@ -222,8 +350,8 @@ func buildMux(cfg *config.ServerConfig, indices map[string]*index.Index, logger 
 		ns := r.URL.Query().Get("namespace")
 		expr := r.URL.Query().Get("q")
 		var result []index.ResourceMeta
-		for _, idx := range resolveIndices(cluster, indices) {
-			res, err := idx.Query(kind, ns, expr)
+		for _, st := range resolveStates(cluster, states) {
+			res, err := st.idx.Query(kind, ns, expr)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -234,8 +362,7 @@ func buildMux(cfg *config.ServerConfig, indices map[string]*index.Index, logger 
 	})
 
 	// MCP
-	mcpServer := buildMCPServer(indices, clusterNames)
-	mux.Handle("/mcp", mcpServer)
+	mux.Handle("/mcp", buildMCPServer(states, clusterNames))
 
 	// Frontend (SPA)
 	distFS, err := fs.Sub(frontendDist, "frontend/dist")
@@ -260,8 +387,8 @@ func buildMux(cfg *config.ServerConfig, indices map[string]*index.Index, logger 
 	return mux
 }
 
-func buildMCPServer(indices map[string]*index.Index, clusterNames []string) http.Handler {
-	s := server.NewMCPServer("korpus", "1.0.0")
+func buildMCPServer(states map[string]*ClusterState, clusterNames []string) http.Handler {
+	s := mcpserver.NewMCPServer("korpus", "1.0.0")
 
 	s.AddTool(mcp.NewTool("list_clusters",
 		mcp.WithDescription("List all cluster names"),
@@ -278,8 +405,8 @@ func buildMCPServer(indices map[string]*index.Index, clusterNames []string) http
 		cluster, _ := args["cluster"].(string)
 		ns, _ := args["namespace"].(string)
 		seen := make(map[string]struct{})
-		for _, idx := range resolveIndices(cluster, indices) {
-			for _, k := range idx.Kinds(ns) {
+		for _, st := range resolveStates(cluster, states) {
+			for _, k := range st.idx.Kinds(ns) {
 				seen[k] = struct{}{}
 			}
 		}
@@ -297,8 +424,8 @@ func buildMCPServer(indices map[string]*index.Index, clusterNames []string) http
 		args := req.GetArguments()
 		cluster, _ := args["cluster"].(string)
 		seen := make(map[string]struct{})
-		for _, idx := range resolveIndices(cluster, indices) {
-			for _, ns := range idx.Namespaces() {
+		for _, st := range resolveStates(cluster, states) {
+			for _, ns := range st.idx.Namespaces() {
 				seen[ns] = struct{}{}
 			}
 		}
@@ -320,8 +447,8 @@ func buildMCPServer(indices map[string]*index.Index, clusterNames []string) http
 		kind, _ := args["kind"].(string)
 		ns, _ := args["namespace"].(string)
 		var result []index.ResourceMeta
-		for _, idx := range resolveIndices(cluster, indices) {
-			result = append(result, idx.List(kind, ns)...)
+		for _, st := range resolveStates(cluster, states) {
+			result = append(result, st.idx.List(kind, ns)...)
 		}
 		return mcp.NewToolResultText(mustJSON(result)), nil
 	})
@@ -338,11 +465,11 @@ func buildMCPServer(indices map[string]*index.Index, clusterNames []string) http
 		kind, _ := args["kind"].(string)
 		ns, _ := args["namespace"].(string)
 		name, _ := args["name"].(string)
-		idx, ok := indices[cluster]
+		state, ok := states[cluster]
 		if !ok {
 			return mcp.NewToolResultText("cluster not found"), nil
 		}
-		meta, ok := idx.Get(kind, ns, name)
+		meta, ok := state.idx.Get(kind, ns, name)
 		if !ok {
 			return mcp.NewToolResultText("not found"), nil
 		}
@@ -351,6 +478,84 @@ func buildMCPServer(indices map[string]*index.Index, clusterNames []string) http
 			return nil, err
 		}
 		return mcp.NewToolResultText(string(data)), nil
+	})
+
+	s.AddTool(mcp.NewTool("get_resource_history",
+		mcp.WithDescription("Get the commit history for a specific K8s resource"),
+		mcp.WithString("cluster", mcp.Required(), mcp.Description("Cluster name")),
+		mcp.WithString("kind", mcp.Required(), mcp.Description("Resource kind")),
+		mcp.WithString("namespace", mcp.Required(), mcp.Description("Namespace (empty for cluster-scoped)")),
+		mcp.WithString("name", mcp.Required(), mcp.Description("Resource name")),
+		mcp.WithNumber("n", mcp.Description("Maximum number of commits to return (default 20)")),
+	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		cluster, _ := args["cluster"].(string)
+		kind, _ := args["kind"].(string)
+		ns, _ := args["namespace"].(string)
+		name, _ := args["name"].(string)
+		n := 20
+		if nv, ok := args["n"].(float64); ok && nv > 0 {
+			n = int(nv)
+		}
+		state, ok := states[cluster]
+		if !ok {
+			return mcp.NewToolResultText("cluster not found"), nil
+		}
+		meta, ok := state.idx.Get(kind, ns, name)
+		if !ok {
+			return mcp.NewToolResultText("not found"), nil
+		}
+		relPath := state.relPath(meta.FilePath)
+		if relPath == "" {
+			return mcp.NewToolResultText("cannot determine git path"), nil
+		}
+		entries, err := state.history(relPath, n)
+		if err != nil {
+			return mcp.NewToolResultText("error: " + err.Error()), nil
+		}
+		return mcp.NewToolResultText(mustJSON(entries)), nil
+	})
+
+	s.AddTool(mcp.NewTool("get_resource_diff",
+		mcp.WithDescription("Get the before/after YAML for a resource between two commits"),
+		mcp.WithString("cluster", mcp.Required(), mcp.Description("Cluster name")),
+		mcp.WithString("kind", mcp.Required(), mcp.Description("Resource kind")),
+		mcp.WithString("namespace", mcp.Required(), mcp.Description("Namespace (empty for cluster-scoped)")),
+		mcp.WithString("name", mcp.Required(), mcp.Description("Resource name")),
+		mcp.WithString("from", mcp.Required(), mcp.Description("From commit SHA")),
+		mcp.WithString("to", mcp.Required(), mcp.Description("To commit SHA")),
+	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		cluster, _ := args["cluster"].(string)
+		kind, _ := args["kind"].(string)
+		ns, _ := args["namespace"].(string)
+		name, _ := args["name"].(string)
+		fromSHA, _ := args["from"].(string)
+		toSHA, _ := args["to"].(string)
+		if fromSHA == "" || toSHA == "" {
+			return mcp.NewToolResultText("from and to are required"), nil
+		}
+		state, ok := states[cluster]
+		if !ok {
+			return mcp.NewToolResultText("cluster not found"), nil
+		}
+		meta, ok := state.idx.Get(kind, ns, name)
+		if !ok {
+			return mcp.NewToolResultText("not found"), nil
+		}
+		relPath := state.relPath(meta.FilePath)
+		if relPath == "" {
+			return mcp.NewToolResultText("cannot determine git path"), nil
+		}
+		before, err := state.fileAt(relPath, fromSHA)
+		if err != nil {
+			return mcp.NewToolResultText("from: " + err.Error()), nil
+		}
+		after, err := state.fileAt(relPath, toSHA)
+		if err != nil {
+			return mcp.NewToolResultText("to: " + err.Error()), nil
+		}
+		return mcp.NewToolResultText(mustJSON(map[string]string{"before": before, "after": after})), nil
 	})
 
 	s.AddTool(mcp.NewTool("query_resources",
@@ -366,8 +571,8 @@ func buildMCPServer(indices map[string]*index.Index, clusterNames []string) http
 		ns, _ := args["namespace"].(string)
 		expr, _ := args["expr"].(string)
 		var result []index.ResourceMeta
-		for _, idx := range resolveIndices(cluster, indices) {
-			res, err := idx.Query(kind, ns, expr)
+		for _, st := range resolveStates(cluster, states) {
+			res, err := st.idx.Query(kind, ns, expr)
 			if err != nil {
 				return mcp.NewToolResultText("error: " + err.Error()), nil
 			}
@@ -376,7 +581,7 @@ func buildMCPServer(indices map[string]*index.Index, clusterNames []string) http
 		return mcp.NewToolResultText(mustJSON(result)), nil
 	})
 
-	return server.NewStreamableHTTPServer(s)
+	return mcpserver.NewStreamableHTTPServer(s)
 }
 
 func jsonResponse(w http.ResponseWriter, v any) {

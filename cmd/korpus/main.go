@@ -72,7 +72,7 @@ func (r *runner) init(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
-	gc, err := gitclient.Clone(ctx, r.cfg.Spec.Git.Repo, r.cfg.Spec.Git.Branch, r.cfg.Spec.Git.Token, dir)
+	gc, err := gitclient.Clone(ctx, r.cfg.Spec.Git.Repo, r.cfg.Spec.Git.Branch, r.cfg.Spec.Git.Token, dir, 1)
 	if err != nil {
 		os.RemoveAll(dir)
 		return fmt.Errorf("git clone: %w", err)

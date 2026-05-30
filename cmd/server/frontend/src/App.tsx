@@ -167,8 +167,8 @@ export default function App() {
               selected={selected}
             />
           </div>
-          <div style={{ flex: 1, overflowY: "auto", padding: 8 }}>
-            <ResourceDetail yaml={detail} />
+          <div style={{ flex: 1, overflow: "hidden", padding: 8 }}>
+            <ResourceDetail resource={selected} yaml={detail} />
           </div>
         </div>
       </div>

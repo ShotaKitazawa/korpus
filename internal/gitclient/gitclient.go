@@ -11,18 +11,25 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 )
 
+// HistoryEntry represents a single commit that touched a file.
+type HistoryEntry struct {
+	SHA       string    `json:"sha"`
+	Timestamp time.Time `json:"timestamp"`
+	Message   string    `json:"message"`
+}
+
 // Client wraps a go-git repository.
 type Client struct {
 	repo  *git.Repository
 	token string
 }
 
-// Clone performs a shallow clone (depth=1) into dir.
-func Clone(ctx context.Context, repoURL, branch, token, dir string) (*Client, error) {
+// Clone clones repoURL into dir. depth=1 produces a shallow clone; depth=0 fetches full history.
+func Clone(ctx context.Context, repoURL, branch, token, dir string, depth int) (*Client, error) {
 	opts := &git.CloneOptions{
 		URL:           repoURL,
 		ReferenceName: plumbing.NewBranchReferenceName(branch),
-		Depth:         1,
+		Depth:         depth,
 		SingleBranch:  true,
 	}
 	if token != "" {
@@ -63,6 +70,49 @@ func (c *Client) Pull() error {
 		return nil
 	}
 	return err
+}
+
+// FileHistory returns up to n commits that touched relPath (relative to the repo root).
+func (c *Client) FileHistory(relPath string, n int) ([]HistoryEntry, error) {
+	iter, err := c.repo.Log(&git.LogOptions{
+		PathFilter: func(p string) bool { return p == relPath },
+		Order:      git.LogOrderCommitterTime,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("git log: %w", err)
+	}
+	defer iter.Close()
+
+	var entries []HistoryEntry
+	for len(entries) < n {
+		commit, err := iter.Next()
+		if err != nil {
+			break
+		}
+		entries = append(entries, HistoryEntry{
+			SHA:       commit.Hash.String(),
+			Timestamp: commit.Author.When.UTC(),
+			Message:   commit.Message,
+		})
+	}
+	return entries, nil
+}
+
+// FileAtCommit returns the content of relPath at the given commit SHA.
+func (c *Client) FileAtCommit(relPath, sha string) (string, error) {
+	commit, err := c.repo.CommitObject(plumbing.NewHash(sha))
+	if err != nil {
+		return "", fmt.Errorf("resolve commit %s: %w", sha, err)
+	}
+	f, err := commit.File(relPath)
+	if err != nil {
+		return "", fmt.Errorf("file %s at %s: %w", relPath, sha, err)
+	}
+	contents, err := f.Contents()
+	if err != nil {
+		return "", fmt.Errorf("read contents: %w", err)
+	}
+	return contents, nil
 }
 
 // CommitAndPush stages all changes, creates a commit, and pushes.
