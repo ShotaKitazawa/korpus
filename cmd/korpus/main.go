@@ -138,18 +138,21 @@ func (r *runner) runOnce(ctx context.Context) error {
 			sanitizer.DeleteFields(items[i].Object, fields)
 		}
 
-		if gvr.Namespaced {
-			byNS := groupByNamespace(items)
-			for ns, nsItems := range byNS {
-				path := filepath.Join(subDir, "namespaced", ns, gvr.Resource+".yaml")
-				if err := writePath(path, nsItems); err != nil {
-					return fmt.Errorf("write %s: %w", path, err)
-				}
-				currPaths[path] = struct{}{}
+		apiGroup := gvr.Group
+		if apiGroup == "" {
+			apiGroup = "core"
+		}
+		for _, item := range items {
+			name := item.GetName()
+			var path string
+			if gvr.Namespaced {
+				path = filepath.Join(subDir, apiGroup, gvr.Version,
+					"namespaces", item.GetNamespace(), gvr.Resource, name+".yaml")
+			} else {
+				path = filepath.Join(subDir, apiGroup, gvr.Version,
+					gvr.Resource, name+".yaml")
 			}
-		} else {
-			path := filepath.Join(subDir, "cluster-wide", gvr.Resource+".yaml")
-			if err := writePath(path, items); err != nil {
+			if err := writeSinglePath(path, item); err != nil {
 				return fmt.Errorf("write %s: %w", path, err)
 			}
 			currPaths[path] = struct{}{}
@@ -257,20 +260,11 @@ func main() {
 	logger.Info("shutting down")
 }
 
-func groupByNamespace(items []unstructured.Unstructured) map[string][]unstructured.Unstructured {
-	m := make(map[string][]unstructured.Unstructured)
-	for _, item := range items {
-		ns := item.GetNamespace()
-		m[ns] = append(m[ns], item)
-	}
-	return m
-}
-
-func writePath(path string, items []unstructured.Unstructured) error {
+func writeSinglePath(path string, item unstructured.Unstructured) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	_, err := store.Write(path, items)
+	_, err := store.WriteSingle(path, item)
 	return err
 }
 

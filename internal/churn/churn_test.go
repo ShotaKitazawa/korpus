@@ -18,12 +18,14 @@ func TestExtractResource(t *testing.T) {
 		subDir string
 		want   string
 	}{
-		{"cluster/cluster-wide/deployments.yaml", "cluster", "deployments"},
-		{"cluster/namespaced/default/pods.yaml", "cluster", "pods"},
-		{"cluster/namespaced/kube-system/configmaps.yaml", "cluster", "configmaps"},
-		{"other/cluster-wide/nodes.yaml", "cluster", ""}, // wrong subDir
-		{"cluster/unknown/foo.yaml", "cluster", ""},      // unknown category
-		{"cluster/namespaced/ns.yaml", "cluster", ""},    // malformed namespaced path
+		{"cluster/apps/v1/deployments/foo.yaml", "cluster", "apps/deployments"},
+		{"cluster/core/v1/namespaces/default/pods/bar.yaml", "cluster", "core/pods"},
+		{"cluster/core/v1/namespaces/kube-system/configmaps/cm.yaml", "cluster", "core/configmaps"},
+		{"cluster/core/v1/nodes/node-1.yaml", "cluster", "core/nodes"},
+		{"other/core/v1/nodes/node-1.yaml", "cluster", ""},              // wrong subDir
+		{"cluster/apps/v1/foo.yaml", "cluster", ""},                      // too few parts (3)
+		{"cluster/apps/v1/namespaces/default/pods.yaml", "cluster", ""},  // 5 parts, missing name
+		{"cluster/apps/v1/cluster/default/pods/foo.yaml", "cluster", ""}, // 6 parts, not namespaces
 	}
 	for _, tc := range cases {
 		assert.Equal(t, tc.want, extractResource(tc.path, tc.subDir), tc.path)
@@ -32,11 +34,11 @@ func TestExtractResource(t *testing.T) {
 
 func TestAnalyze_HighChurn(t *testing.T) {
 	subDir := "backup"
-	// 3 commits all touching deployments → should warn
+	// 3 commits all touching the same deployment → should warn
 	commitFiles := [][]string{
-		{subDir + "/cluster-wide/deployments.yaml"},
-		{subDir + "/cluster-wide/deployments.yaml"},
-		{subDir + "/cluster-wide/deployments.yaml"},
+		{subDir + "/apps/v1/deployments/my-deploy.yaml"},
+		{subDir + "/apps/v1/deployments/my-deploy.yaml"},
+		{subDir + "/apps/v1/deployments/my-deploy.yaml"},
 	}
 
 	var warned []string
@@ -50,16 +52,16 @@ func TestAnalyze_HighChurn(t *testing.T) {
 
 	dir := makeTestRepo(t, subDir, commitFiles)
 	require.NoError(t, Analyze(dir, 3, subDir, 1.0, logger))
-	assert.Contains(t, warned, "deployments")
+	assert.Contains(t, warned, "apps/deployments")
 }
 
 func TestAnalyze_NoChurn(t *testing.T) {
 	subDir := "backup"
 	// Each commit touches a different resource
 	commitFiles := [][]string{
-		{subDir + "/cluster-wide/deployments.yaml"},
-		{subDir + "/cluster-wide/pods.yaml"},
-		{subDir + "/cluster-wide/nodes.yaml"},
+		{subDir + "/apps/v1/deployments/deploy-a.yaml"},
+		{subDir + "/core/v1/pods/pod-a.yaml"},
+		{subDir + "/core/v1/nodes/node-1.yaml"},
 	}
 
 	var warned []string
@@ -80,9 +82,9 @@ func TestAnalyze_PartialThreshold(t *testing.T) {
 	subDir := "backup"
 	// 3 commits, deployments appears in 2 of 3 → flagged at threshold=0.5, not at 1.0
 	commitFiles := [][]string{
-		{subDir + "/cluster-wide/deployments.yaml"},
-		{subDir + "/cluster-wide/deployments.yaml"},
-		{subDir + "/cluster-wide/pods.yaml"},
+		{subDir + "/apps/v1/deployments/deploy-a.yaml"},
+		{subDir + "/apps/v1/deployments/deploy-a.yaml"},
+		{subDir + "/core/v1/pods/pod-a.yaml"},
 	}
 
 	warned := func(threshold float64) []string {
@@ -99,7 +101,7 @@ func TestAnalyze_PartialThreshold(t *testing.T) {
 		return out
 	}
 
-	assert.Contains(t, warned(0.5), "deployments")
+	assert.Contains(t, warned(0.5), "apps/deployments")
 	assert.Empty(t, warned(1.0))
 }
 

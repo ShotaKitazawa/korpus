@@ -76,22 +76,22 @@ func Analyze(repoPath string, n int, subDir string, threshold float64, logger *s
 // extractResource derives a resource identifier from a file path.
 // Expected forms:
 //
-//	<subDir>/cluster-wide/<resource>.yaml   → <resource>
-//	<subDir>/namespaced/<ns>/<resource>.yaml → <resource>
+//	<subDir>/<group>/<version>/<resource>/<name>.yaml            → <group>/<resource>
+//	<subDir>/<group>/<version>/namespaces/<ns>/<resource>/<name>.yaml → <group>/<resource>
 func extractResource(path, subDir string) string {
 	rel := strings.TrimPrefix(path, subDir+"/")
 	if rel == path {
 		return "" // not under subDir
 	}
-	parts := strings.SplitN(rel, "/", 3)
-	switch parts[0] {
-	case "cluster-wide":
-		if len(parts) >= 2 {
-			return strings.TrimSuffix(parts[1], ".yaml")
-		}
-	case "namespaced":
-		if len(parts) == 3 {
-			return strings.TrimSuffix(parts[2], ".yaml")
+	parts := strings.Split(rel, "/")
+	switch len(parts) {
+	case 4:
+		// <group>/<version>/<resource>/<name>.yaml
+		return parts[0] + "/" + parts[2]
+	case 6:
+		// <group>/<version>/namespaces/<ns>/<resource>/<name>.yaml
+		if parts[2] == "namespaces" {
+			return parts[0] + "/" + parts[4]
 		}
 	}
 	return ""

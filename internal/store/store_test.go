@@ -19,46 +19,46 @@ func makeItem(name, ns string) unstructured.Unstructured {
 	return u
 }
 
-func TestWrite_NewFile(t *testing.T) {
+func TestWriteSingle_NewFile(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "pods.yaml")
+	path := filepath.Join(dir, "pod-a.yaml")
 
-	changed, err := Write(path, []unstructured.Unstructured{makeItem("pod-a", "default")})
+	changed, err := WriteSingle(path, makeItem("pod-a", "default"))
 	require.NoError(t, err)
 	assert.True(t, changed)
 	assert.FileExists(t, path)
 }
 
-func TestWrite_NoChange(t *testing.T) {
+func TestWriteSingle_NoChange(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "pods.yaml")
-	items := []unstructured.Unstructured{makeItem("pod-a", "default")}
+	path := filepath.Join(dir, "pod-a.yaml")
+	item := makeItem("pod-a", "default")
 
-	_, err := Write(path, items)
+	_, err := WriteSingle(path, item)
 	require.NoError(t, err)
 
-	changed, err := Write(path, items)
+	changed, err := WriteSingle(path, item)
 	require.NoError(t, err)
 	assert.False(t, changed)
 }
 
-func TestWrite_Changed(t *testing.T) {
+func TestWriteSingle_Changed(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "pods.yaml")
+	path := filepath.Join(dir, "pod-a.yaml")
 
-	_, err := Write(path, []unstructured.Unstructured{makeItem("pod-a", "default")})
+	_, err := WriteSingle(path, makeItem("pod-a", "default"))
 	require.NoError(t, err)
 
-	changed, err := Write(path, []unstructured.Unstructured{makeItem("pod-b", "default")})
+	changed, err := WriteSingle(path, makeItem("pod-b", "default"))
 	require.NoError(t, err)
 	assert.True(t, changed)
 }
 
-func TestWrite_CreatesParentDir(t *testing.T) {
+func TestWriteSingle_CreatesParentDir(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "namespaced", "default", "pods.yaml")
+	path := filepath.Join(dir, "core", "v1", "namespaces", "default", "pods", "pod-a.yaml")
 
-	_, err := Write(path, nil)
+	_, err := WriteSingle(path, makeItem("pod-a", "default"))
 	require.NoError(t, err)
 	assert.FileExists(t, path)
 }

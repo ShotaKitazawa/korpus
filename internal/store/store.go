@@ -12,12 +12,12 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// Write serialises items as a v1 List YAML to path.
+// WriteSingle serialises a single resource as YAML to path.
 // Returns changed=true when the written content differs from any existing file.
-func Write(path string, items []unstructured.Unstructured) (changed bool, err error) {
-	raw, err := marshal(items)
+func WriteSingle(path string, item unstructured.Unstructured) (bool, error) {
+	raw, err := yaml.Marshal(item.Object)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("marshal yaml: %w", err)
 	}
 
 	existing, readErr := os.ReadFile(path)
@@ -51,23 +51,6 @@ func CleanObsolete(dir string, currPaths map[string]struct{}) error {
 		}
 		return nil
 	})
-}
-
-func marshal(items []unstructured.Unstructured) ([]byte, error) {
-	list := make([]any, len(items))
-	for i, item := range items {
-		list[i] = item.Object
-	}
-	obj := map[string]any{
-		"apiVersion": "v1",
-		"kind":       "List",
-		"items":      list,
-	}
-	data, err := yaml.Marshal(obj)
-	if err != nil {
-		return nil, fmt.Errorf("marshal yaml: %w", err)
-	}
-	return data, nil
 }
 
 func sha256sum(b []byte) string {

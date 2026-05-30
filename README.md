@@ -83,11 +83,14 @@ Runs on the schedule defined in `backup.schedule` (default: every 10 minutes). E
 
 ```
 <subDir>/
-├── cluster-wide/
-│   └── nodes.yaml
-└── namespaced/
-    └── default/
-        └── pods.yaml
+└── $API_GROUP/          (core group uses "core")
+    └── $VERSION/
+        ├── $RESOURCE/
+        │   └── $NAME.yaml
+        └── namespaces/
+            └── $NAMESPACE/
+                └── $RESOURCE/
+                    └── $NAME.yaml
 ```
 
 ### server (viewer)
