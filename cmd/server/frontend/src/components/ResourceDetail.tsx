@@ -1,6 +1,114 @@
 import { useEffect, useState } from "react"
 import type { ResourceMeta } from "../App.tsx"
 
+const colors = {
+  key: "#2563eb",
+  string: "#16a34a",
+  number: "#d97706",
+  bool: "#7c3aed",
+  comment: "#9ca3af",
+  separator: "#6b7280",
+}
+
+function YamlLine({ line }: { line: string }) {
+  // separator
+  if (/^---\s*$/.test(line)) {
+    return (
+      <span>
+        <span style={{ color: colors.separator }}>{line}</span>
+        {"\n"}
+      </span>
+    )
+  }
+  // comment
+  const commentMatch = line.match(/^(\s*)(#.*)$/)
+  if (commentMatch) {
+    return (
+      <span>
+        {commentMatch[1]}
+        <span style={{ color: colors.comment }}>{commentMatch[2]}</span>
+        {"\n"}
+      </span>
+    )
+  }
+  // key: value
+  const kvMatch = line.match(/^(\s*-?\s*)([^:]+)(:)(\s+)(.*)?$/)
+  if (kvMatch) {
+    const [, indent, key, colon, space, val = ""] = kvMatch
+    return (
+      <span>
+        {indent}
+        <span style={{ color: colors.key }}>{key}</span>
+        {colon}
+        {space}
+        <YamlValue value={val} />
+        {"\n"}
+      </span>
+    )
+  }
+  // list item or plain value
+  const listMatch = line.match(/^(\s*-\s+)(.*)$/)
+  if (listMatch) {
+    return (
+      <span>
+        <span style={{ color: colors.separator }}>{listMatch[1]}</span>
+        <YamlValue value={listMatch[2]} />
+        {"\n"}
+      </span>
+    )
+  }
+  return (
+    <span>
+      {line}
+      {"\n"}
+    </span>
+  )
+}
+
+function YamlValue({ value }: { value: string }) {
+  if (value === "") return null
+  if (
+    value === "true" ||
+    value === "false" ||
+    value === "null" ||
+    value === "~"
+  ) {
+    return <span style={{ color: colors.bool }}>{value}</span>
+  }
+  if (/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(value)) {
+    return <span style={{ color: colors.number }}>{value}</span>
+  }
+  if (
+    value.startsWith('"') ||
+    value.startsWith("'") ||
+    value.startsWith("|") ||
+    value.startsWith(">")
+  ) {
+    return <span style={{ color: colors.string }}>{value}</span>
+  }
+  return <span>{value}</span>
+}
+
+function YamlHighlight({ text }: { text: string }) {
+  const lines = text.split("\n")
+  return (
+    <pre
+      style={{
+        margin: 0,
+        fontSize: 12,
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-all",
+        overflowY: "auto",
+        flex: 1,
+      }}
+    >
+      {lines.map((line, i) => (
+        <YamlLine key={i} line={line} />
+      ))}
+    </pre>
+  )
+}
+
 interface HistoryEntry {
   sha: string
   timestamp: string
@@ -98,20 +206,7 @@ export default function ResourceDetail({ resource, yaml }: Props) {
         </button>
       </div>
 
-      {tab === "yaml" && (
-        <pre
-          style={{
-            margin: 0,
-            fontSize: 12,
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-all",
-            overflowY: "auto",
-            flex: 1,
-          }}
-        >
-          {yaml}
-        </pre>
-      )}
+      {tab === "yaml" && <YamlHighlight text={yaml} />}
 
       {tab === "history" && (
         <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
@@ -158,35 +253,29 @@ export default function ResourceDetail({ resource, yaml }: Props) {
           <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
             {diff ? (
               <>
-                <pre
+                <div
                   style={{
                     flex: 1,
-                    margin: 0,
-                    padding: 8,
-                    fontSize: 11,
-                    overflowY: "auto",
+                    overflow: "auto",
                     background: "#fff8f8",
                     borderRight: "1px solid #ccc",
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-all",
-                  }}
-                >
-                  {diff.before}
-                </pre>
-                <pre
-                  style={{
-                    flex: 1,
-                    margin: 0,
                     padding: 8,
                     fontSize: 11,
-                    overflowY: "auto",
-                    background: "#f8fff8",
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-all",
                   }}
                 >
-                  {diff.after}
-                </pre>
+                  <YamlHighlight text={diff.before} />
+                </div>
+                <div
+                  style={{
+                    flex: 1,
+                    overflow: "auto",
+                    background: "#f8fff8",
+                    padding: 8,
+                    fontSize: 11,
+                  }}
+                >
+                  <YamlHighlight text={diff.after} />
+                </div>
               </>
             ) : (
               <div style={{ padding: 8, color: "#888", fontSize: 11 }}>
