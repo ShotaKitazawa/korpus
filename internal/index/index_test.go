@@ -75,28 +75,28 @@ func TestKinds_ByNamespace(t *testing.T) {
 
 func TestList_ByKind(t *testing.T) {
 	_, idx := setup(t)
-	pods := idx.List("Pod", "")
+	pods := idx.List("Pod", "", nil)
 	assert.Len(t, pods, 1)
 	assert.Equal(t, "my-pod", pods[0].Name)
 }
 
 func TestList_ByNamespace(t *testing.T) {
 	_, idx := setup(t)
-	items := idx.List("", "kube-system")
+	items := idx.List("", "kube-system", nil)
 	assert.Len(t, items, 1)
 	assert.Equal(t, "coredns", items[0].Name)
 }
 
 func TestList_ByKindAndNamespace(t *testing.T) {
 	_, idx := setup(t)
-	items := idx.List("Deployment", "kube-system")
+	items := idx.List("Deployment", "kube-system", nil)
 	assert.Len(t, items, 1)
 	assert.Equal(t, "Deployment", items[0].Kind)
 }
 
 func TestList_All(t *testing.T) {
 	_, idx := setup(t)
-	assert.Len(t, idx.List("", ""), 3)
+	assert.Len(t, idx.List("", "", nil), 3)
 }
 
 func TestGet_Found(t *testing.T) {
@@ -118,7 +118,7 @@ func TestBuild_SkipsNonYAML(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("hello"), 0o644))
 	idx := New("test-cluster", defaultFields)
 	require.NoError(t, idx.Build(dir))
-	assert.Empty(t, idx.List("", ""))
+	assert.Empty(t, idx.List("", "", nil))
 }
 
 func TestBuild_MultiDoc(t *testing.T) {
@@ -136,20 +136,20 @@ metadata:
 `)
 	idx := New("test-cluster", defaultFields)
 	require.NoError(t, idx.Build(dir))
-	assert.Len(t, idx.List("", ""), 2)
+	assert.Len(t, idx.List("", "", nil), 2)
 }
 
 // --- Query tests ---
 
 func TestQuery_KindRequired(t *testing.T) {
 	_, idx := setup(t)
-	_, err := idx.Query("", "", "")
+	_, err := idx.Query("", "", nil, "")
 	assert.Error(t, err)
 }
 
 func TestQuery_EmptyExpr(t *testing.T) {
 	_, idx := setup(t)
-	results, err := idx.Query("Pod", "", "")
+	results, err := idx.Query("Pod", "", nil, "")
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 	assert.Equal(t, "my-pod", results[0].Name)
@@ -157,7 +157,7 @@ func TestQuery_EmptyExpr(t *testing.T) {
 
 func TestQuery_Namespace(t *testing.T) {
 	_, idx := setup(t)
-	results, err := idx.Query("Deployment", "kube-system", "")
+	results, err := idx.Query("Deployment", "kube-system", nil, "")
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 	assert.Equal(t, "coredns", results[0].Name)
@@ -165,7 +165,7 @@ func TestQuery_Namespace(t *testing.T) {
 
 func TestQuery_CELLabel(t *testing.T) {
 	_, idx := setup(t)
-	results, err := idx.Query("Pod", "", `object.metadata.labels["app"] == "my-app"`)
+	results, err := idx.Query("Pod", "", nil, `object.metadata.labels["app"] == "my-app"`)
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 	assert.Equal(t, "my-pod", results[0].Name)
@@ -173,9 +173,29 @@ func TestQuery_CELLabel(t *testing.T) {
 
 func TestQuery_CELLabelNoMatch(t *testing.T) {
 	_, idx := setup(t)
-	results, err := idx.Query("Pod", "", `object.metadata.labels["app"] == "other"`)
+	results, err := idx.Query("Pod", "", nil, `object.metadata.labels["app"] == "other"`)
 	require.NoError(t, err)
 	assert.Empty(t, results)
+}
+
+func TestList_LabelSelector(t *testing.T) {
+	_, idx := setup(t)
+	results := idx.List("Pod", "", map[string]string{"app": "my-app"})
+	require.Len(t, results, 1)
+	assert.Equal(t, "my-pod", results[0].Name)
+}
+
+func TestList_LabelSelectorNoMatch(t *testing.T) {
+	_, idx := setup(t)
+	results := idx.List("Pod", "", map[string]string{"app": "other"})
+	assert.Empty(t, results)
+}
+
+func TestList_LabelKeyOnly(t *testing.T) {
+	_, idx := setup(t)
+	results := idx.List("", "", map[string]string{"app": ""})
+	require.Len(t, results, 1)
+	assert.Equal(t, "my-pod", results[0].Name)
 }
 
 func TestQuery_CELFallback(t *testing.T) {
@@ -193,7 +213,7 @@ spec:
 	idx := New("test-cluster", []string{})
 	require.NoError(t, idx.Build(dir))
 
-	results, err := idx.Query("Pod", "", `object.spec.dnsPolicy == "ClusterFirst"`)
+	results, err := idx.Query("Pod", "", nil, `object.spec.dnsPolicy == "ClusterFirst"`)
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 	assert.Equal(t, "fallback-pod", results[0].Name)
@@ -201,6 +221,6 @@ spec:
 
 func TestQuery_InvalidCEL(t *testing.T) {
 	_, idx := setup(t)
-	_, err := idx.Query("Pod", "", `object.metadata.name ===`)
+	_, err := idx.Query("Pod", "", nil, `object.metadata.name ===`)
 	assert.Error(t, err)
 }

@@ -150,8 +150,8 @@ func (idx *Index) Namespaces() []string {
 	return result
 }
 
-// List returns resources matching kind and/or namespace. Empty string means "any".
-func (idx *Index) List(kind, namespace string) []ResourceMeta {
+// List returns resources matching kind, namespace, and/or labels. Empty string / nil means "any".
+func (idx *Index) List(kind, namespace string, labelSel map[string]string) []ResourceMeta {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	var result []ResourceMeta
@@ -162,16 +162,33 @@ func (idx *Index) List(kind, namespace string) []ResourceMeta {
 		if namespace != "" && r.Namespace != namespace {
 			continue
 		}
+		if !matchLabels(r.Labels, labelSel) {
+			continue
+		}
 		result = append(result, r)
 	}
 	return result
 }
 
+// matchLabels returns true when all entries in sel are present (and equal, if value non-empty) in labels.
+func matchLabels(labels map[string]string, sel map[string]string) bool {
+	for k, v := range sel {
+		got, ok := labels[k]
+		if !ok {
+			return false
+		}
+		if v != "" && got != v {
+			return false
+		}
+	}
+	return true
+}
+
 // Query evaluates a CEL expression against resources of the given kind.
-// kind is required. namespace is an optional pre-filter.
+// kind is required. namespace and labelSel are optional pre-filters.
 // expr is a CEL expression where "object" refers to the resource document.
 // If expr is empty, all matching resources are returned.
-func (idx *Index) Query(kind, namespace, expr string) ([]ResourceMeta, error) {
+func (idx *Index) Query(kind, namespace string, labelSel map[string]string, expr string) ([]ResourceMeta, error) {
 	if kind == "" {
 		return nil, fmt.Errorf("kind is required")
 	}
@@ -183,6 +200,9 @@ func (idx *Index) Query(kind, namespace, expr string) ([]ResourceMeta, error) {
 			continue
 		}
 		if namespace != "" && r.Namespace != namespace {
+			continue
+		}
+		if !matchLabels(r.Labels, labelSel) {
 			continue
 		}
 		candidates = append(candidates, r)

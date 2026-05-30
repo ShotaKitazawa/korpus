@@ -59,7 +59,7 @@ func (s *ClusterState) recordPull(err error) {
 		s.lastPullErr = err.Error()
 	} else {
 		s.lastPullErr = ""
-		s.resourceCount = len(s.idx.List("", ""))
+		s.resourceCount = len(s.idx.List("", "", nil))
 	}
 }
 
@@ -309,9 +309,10 @@ func buildMux(cfg *config.ServerConfig, states map[string]*ClusterState, logger 
 		cluster := r.URL.Query().Get("cluster")
 		kind := r.URL.Query().Get("kind")
 		ns := r.URL.Query().Get("namespace")
+		labelSel := parseLabelSelector(r.URL.Query().Get("labels"))
 		var result []index.ResourceMeta
 		for _, st := range resolveStates(cluster, states) {
-			result = append(result, st.idx.List(kind, ns)...)
+			result = append(result, st.idx.List(kind, ns, labelSel)...)
 		}
 		jsonResponse(w, result)
 	})
@@ -421,10 +422,11 @@ func buildMux(cfg *config.ServerConfig, states map[string]*ClusterState, logger 
 		}
 		cluster := r.URL.Query().Get("cluster")
 		ns := r.URL.Query().Get("namespace")
+		labelSel := parseLabelSelector(r.URL.Query().Get("labels"))
 		expr := r.URL.Query().Get("q")
 		var result []index.ResourceMeta
 		for _, st := range resolveStates(cluster, states) {
-			res, err := st.idx.Query(kind, ns, expr)
+			res, err := st.idx.Query(kind, ns, labelSel, expr)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -510,18 +512,20 @@ func buildMCPServer(states map[string]*ClusterState, clusterNames []string) http
 	})
 
 	s.AddTool(mcp.NewTool("list_resources",
-		mcp.WithDescription("List K8s resources, optionally filtered by cluster, kind and/or namespace"),
+		mcp.WithDescription("List K8s resources, optionally filtered by cluster, kind, namespace and/or labels"),
 		mcp.WithString("cluster", mcp.Description("Cluster name (optional, omit for all clusters)")),
 		mcp.WithString("kind", mcp.Description("Resource kind (e.g. Pod, Deployment)")),
 		mcp.WithString("namespace", mcp.Description("Namespace to filter by")),
+		mcp.WithString("labels", mcp.Description("Label selector, comma-separated key=value pairs (e.g. app=nginx,env=prod)")),
 	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		cluster, _ := args["cluster"].(string)
 		kind, _ := args["kind"].(string)
 		ns, _ := args["namespace"].(string)
+		labelSel := parseLabelSelector(func() string { s, _ := args["labels"].(string); return s }())
 		var result []index.ResourceMeta
 		for _, st := range resolveStates(cluster, states) {
-			result = append(result, st.idx.List(kind, ns)...)
+			result = append(result, st.idx.List(kind, ns, labelSel)...)
 		}
 		return mcp.NewToolResultText(mustJSON(result)), nil
 	})
@@ -636,16 +640,18 @@ func buildMCPServer(states map[string]*ClusterState, clusterNames []string) http
 		mcp.WithString("cluster", mcp.Description("Cluster name (optional, omit for all clusters)")),
 		mcp.WithString("kind", mcp.Required(), mcp.Description("Resource kind (e.g. Pod, Deployment)")),
 		mcp.WithString("namespace", mcp.Description("Namespace to filter by (optional)")),
+		mcp.WithString("labels", mcp.Description("Label selector, comma-separated key=value pairs (optional)")),
 		mcp.WithString("expr", mcp.Description("CEL expression (optional). If omitted, returns all resources of the given kind.")),
 	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		cluster, _ := args["cluster"].(string)
 		kind, _ := args["kind"].(string)
 		ns, _ := args["namespace"].(string)
+		labelSel := parseLabelSelector(func() string { s, _ := args["labels"].(string); return s }())
 		expr, _ := args["expr"].(string)
 		var result []index.ResourceMeta
 		for _, st := range resolveStates(cluster, states) {
-			res, err := st.idx.Query(kind, ns, expr)
+			res, err := st.idx.Query(kind, ns, labelSel, expr)
 			if err != nil {
 				return mcp.NewToolResultText("error: " + err.Error()), nil
 			}
@@ -665,4 +671,22 @@ func jsonResponse(w http.ResponseWriter, v any) {
 func mustJSON(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
+}
+
+// parseLabelSelector parses "key=value,key2=value2" into a map.
+// A bare key (no "=") is treated as a key-existence check (empty value).
+func parseLabelSelector(s string) map[string]string {
+	if s == "" {
+		return nil
+	}
+	result := make(map[string]string)
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		k, v, _ := strings.Cut(part, "=")
+		result[strings.TrimSpace(k)] = strings.TrimSpace(v)
+	}
+	return result
 }

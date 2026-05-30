@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import ClusterList from "./components/ClusterList.tsx"
 import KindSelect from "./components/KindSelect.tsx"
+import LabelFilter from "./components/LabelFilter.tsx"
 import NamespaceList from "./components/NamespaceList.tsx"
 import ResourceDetail from "./components/ResourceDetail.tsx"
 import ResourceList from "./components/ResourceList.tsx"
@@ -21,6 +22,7 @@ export default function App() {
   const [selectedNamespace, setSelectedNamespace] = useState("")
   const [kinds, setKinds] = useState<string[]>([])
   const [selectedKind, setSelectedKind] = useState("")
+  const [labelFilter, setLabelFilter] = useState("")
   const [resources, setResources] = useState<ResourceMeta[]>([])
   const [selected, setSelected] = useState<ResourceMeta | null>(null)
   const [detail, setDetail] = useState("")
@@ -57,6 +59,7 @@ export default function App() {
       const params = new URLSearchParams({ kind: selectedKind })
       if (selectedCluster) params.set("cluster", selectedCluster)
       if (selectedNamespace) params.set("namespace", selectedNamespace)
+      if (labelFilter) params.set("labels", labelFilter)
       params.set("q", searchQuery)
       fetch(`/api/query?${params}`)
         .then((r) => r.json())
@@ -68,11 +71,18 @@ export default function App() {
     if (selectedCluster) params.set("cluster", selectedCluster)
     if (selectedKind) params.set("kind", selectedKind)
     if (selectedNamespace) params.set("namespace", selectedNamespace)
+    if (labelFilter) params.set("labels", labelFilter)
     fetch(`/api/resources?${params}`)
       .then((r) => r.json())
       .then((data) => setResources(data ?? []))
       .catch(console.error)
-  }, [selectedCluster, selectedNamespace, selectedKind, searchQuery])
+  }, [
+    selectedCluster,
+    selectedNamespace,
+    selectedKind,
+    searchQuery,
+    labelFilter,
+  ])
 
   useEffect(() => {
     if (!selected) {
@@ -142,6 +152,13 @@ export default function App() {
             value={selectedKind}
             onChange={(k) => {
               setSelectedKind(k)
+              setSelected(null)
+            }}
+          />
+          <LabelFilter
+            value={labelFilter}
+            onChange={(v) => {
+              setLabelFilter(v)
               setSelected(null)
             }}
           />
