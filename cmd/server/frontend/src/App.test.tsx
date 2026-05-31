@@ -2,20 +2,21 @@ import { render, screen } from "@testing-library/react"
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import App from "./App.tsx"
 
+function resolveUrl(arg: Request | string): string {
+  return arg instanceof Request ? arg.url : String(arg)
+}
+
 beforeEach(() => {
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockImplementation((url: string) => {
-      if (url.startsWith("/api/clusters")) {
-        return Promise.resolve({
-          json: () => Promise.resolve(["prod", "staging"]),
-          text: () => Promise.resolve(""),
-        })
+    vi.fn().mockImplementation((arg: Request | string) => {
+      const url = resolveUrl(arg)
+      if (url.includes("/api/clusters")) {
+        return Promise.resolve(
+          new Response(JSON.stringify(["prod", "staging"]), { status: 200 }),
+        )
       }
-      return Promise.resolve({
-        json: () => Promise.resolve([]),
-        text: () => Promise.resolve(""),
-      })
+      return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }))
     }),
   )
 })

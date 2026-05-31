@@ -22,7 +22,7 @@ func TestExtractResource(t *testing.T) {
 		{"cluster/core/v1/namespaces/default/pods/bar.yaml", "cluster", "core/pods"},
 		{"cluster/core/v1/namespaces/kube-system/configmaps/cm.yaml", "cluster", "core/configmaps"},
 		{"cluster/core/v1/nodes/node-1.yaml", "cluster", "core/nodes"},
-		{"other/core/v1/nodes/node-1.yaml", "cluster", ""},              // wrong subDir
+		{"other/core/v1/nodes/node-1.yaml", "cluster", ""},               // wrong subDir
 		{"cluster/apps/v1/foo.yaml", "cluster", ""},                      // too few parts (3)
 		{"cluster/apps/v1/namespaces/default/pods.yaml", "cluster", ""},  // 5 parts, missing name
 		{"cluster/apps/v1/cluster/default/pods/foo.yaml", "cluster", ""}, // 6 parts, not namespaces

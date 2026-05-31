@@ -16,13 +16,14 @@ import (
 
 // ResourceMeta holds the identifying metadata of a single K8s resource.
 type ResourceMeta struct {
-	Cluster       string            `json:"cluster"`
-	Kind          string            `json:"kind"`
-	Name          string            `json:"name"`
-	Namespace     string            `json:"namespace"`
-	Labels        map[string]string `json:"labels"`
-	FilePath      string            `json:"-"`
-	IndexedFields map[string]any    `json:"-"`
+	Cluster           string            `json:"cluster"`
+	Kind              string            `json:"kind"`
+	Name              string            `json:"name"`
+	Namespace         string            `json:"namespace"`
+	Labels            map[string]string `json:"labels"`
+	CreationTimestamp string            `json:"creationTimestamp,omitempty"`
+	FilePath          string            `json:"-"`
+	IndexedFields     map[string]any    `json:"-"`
 }
 
 // Index is a thread-safe in-memory index of K8s resources.
@@ -73,6 +74,7 @@ func (idx *Index) Build(dir string) error {
 				continue
 			}
 			namespace, _ := meta["namespace"].(string)
+			creationTimestamp, _ := meta["creationTimestamp"].(string)
 
 			rawLabels, _ := meta["labels"].(map[string]any)
 			labels := make(map[string]string, len(rawLabels))
@@ -93,13 +95,14 @@ func (idx *Index) Build(dir string) error {
 			}
 
 			result = append(result, ResourceMeta{
-				Cluster:       idx.cluster,
-				Kind:          kind,
-				Name:          name,
-				Namespace:     namespace,
-				Labels:        labels,
-				FilePath:      path,
-				IndexedFields: indexedFields,
+				Cluster:           idx.cluster,
+				Kind:              kind,
+				Name:              name,
+				Namespace:         namespace,
+				Labels:            labels,
+				CreationTimestamp: creationTimestamp,
+				FilePath:          path,
+				IndexedFields:     indexedFields,
 			})
 		}
 		return nil

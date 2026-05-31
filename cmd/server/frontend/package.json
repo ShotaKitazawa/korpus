@@ -11,9 +11,11 @@
     "format": "oxfmt -w .",
     "format:check": "oxfmt .",
     "test": "vitest run",
+    "openapi-ts": "openapi-typescript ../../../openapi.yaml -o src/gen/api.d.ts",
     "sync:pin": "node ../../scripts/sync-frontend.ts --pin"
   },
   "dependencies": {
+    "openapi-fetch": "^0.17.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
@@ -23,6 +25,7 @@
     "@types/react-dom": "^19.1.5",
     "@vitejs/plugin-react": "^4.5.1",
     "jsdom": "^26.1.0",
+    "openapi-typescript": "^7.13.0",
     "oxfmt": "^0.1.0",
     "oxlint": "^1.0.0",
     "typescript": "^5.8.3",

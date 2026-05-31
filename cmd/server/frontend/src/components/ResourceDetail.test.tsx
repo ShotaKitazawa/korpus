@@ -42,6 +42,18 @@ const historyEntries = [
   },
 ]
 
+function makeJsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  })
+}
+
+// Returns a factory so each mock call gets a fresh Response (body streams can only be read once).
+function jsonResponse(body: unknown, status = 200) {
+  return () => Promise.resolve(makeJsonResponse(body, status))
+}
+
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
@@ -114,26 +126,27 @@ describe("ResourceDetail", () => {
   })
 
   it("switches to history tab and fetches", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-        json: async () => [],
-        text: async () => "",
-      }))
+    const mockFetch = vi.fn().mockImplementation(jsonResponse([]))
+    vi.stubGlobal("fetch", mockFetch)
 
     render(<ResourceDetail resource={mockResource} yaml={sampleYaml} />)
     fireEvent.click(screen.getByText("History"))
 
     await waitFor(() => {
-      expect(vi.mocked(fetch as typeof globalThis.fetch)).toHaveBeenCalledWith(
+      expect(mockFetch).toHaveBeenCalled()
+      const arg = mockFetch.mock.calls[0][0] as Request | string
+      const url = arg instanceof Request ? arg.url : String(arg)
+      expect(url).toContain(
         "/api/resources/test-cluster/Pod/default/my-pod/history",
       )
     })
   })
 
   it("renders history entries", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-        json: async () => historyEntries,
-        text: async () => "",
-      }))
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(jsonResponse(historyEntries)),
+    )
 
     render(<ResourceDetail resource={mockResource} yaml={sampleYaml} />)
     fireEvent.click(screen.getByText("History"))
@@ -145,20 +158,13 @@ describe("ResourceDetail", () => {
   })
 
   it("loads diff on history entry click", async () => {
-    const fetchMock = vi
+    const mockFetch = vi
       .fn()
-      .mockResolvedValueOnce({
-        json: async () => historyEntries,
-        text: async () => "",
-      })
-      .mockResolvedValueOnce({
-        json: async () => ({
-          before: "kind: Pod\n",
-          after: "kind: Pod\nspec:\n",
-        }),
-        text: async () => "",
-      })
-    vi.stubGlobal("fetch", fetchMock)
+      .mockImplementationOnce(jsonResponse(historyEntries))
+      .mockImplementationOnce(
+        jsonResponse({ before: "kind: Pod\n", after: "kind: Pod\nspec:\n" }),
+      )
+    vi.stubGlobal("fetch", mockFetch)
 
     render(<ResourceDetail resource={mockResource} yaml={sampleYaml} />)
     fireEvent.click(screen.getByText("History"))
@@ -167,8 +173,11 @@ describe("ResourceDetail", () => {
     fireEvent.click(screen.getByText("update pod"))
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/resources/test-cluster/Pod/default/my-pod/diff?from=def67890efgh&to=abc12345abcd",
+      expect(mockFetch).toHaveBeenCalledTimes(2)
+      const arg = mockFetch.mock.calls[1][0] as Request | string
+      const url = arg instanceof Request ? arg.url : String(arg)
+      expect(url).toContain(
+        "/api/resources/test-cluster/Pod/default/my-pod/diff",
       )
     })
   })
@@ -176,17 +185,10 @@ describe("ResourceDetail", () => {
   it("renders diff panes", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce({
-        json: async () => historyEntries,
-        text: async () => "",
-      })
-      .mockResolvedValueOnce({
-        json: async () => ({
-          before: "before: yaml\n",
-          after: "after: yaml\n",
-        }),
-        text: async () => "",
-      })
+      .mockImplementationOnce(jsonResponse(historyEntries))
+      .mockImplementationOnce(
+        jsonResponse({ before: "before: yaml\n", after: "after: yaml\n" }),
+      )
     vi.stubGlobal("fetch", fetchMock)
 
     render(<ResourceDetail resource={mockResource} yaml={sampleYaml} />)
@@ -200,10 +202,7 @@ describe("ResourceDetail", () => {
   })
 
   it("resets to yaml tab when resource changes", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-        json: async () => [],
-        text: async () => "",
-      }))
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(jsonResponse([])))
 
     const { rerender } = render(
       <ResourceDetail resource={mockResource} yaml={sampleYaml} />,

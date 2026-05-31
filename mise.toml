@@ -101,8 +101,21 @@ run = """
   mise run ci-build-frontend
 """
 
+[tasks.generate-backend]
+run = "go run github.com/ogen-go/ogen/cmd/ogen --target internal/api --clean openapi.yaml"
+
+[tasks.generate-frontend]
+depends = ["generate-backend"]
+run = "pnpm openapi-ts"
+dir = "{{config_root}}/cmd/server/frontend"
+
+[tasks.generate]
+depends = ["generate-frontend"]
+
 [tasks.pre-merge]
 run = """
+  mise run generate &&
   mise run format &&
+  mise run format-frontend &&
   mise run ci
 """

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import { api, type ResourceMeta } from "./api.ts"
 import ClusterList from "./components/ClusterList.tsx"
 import KindSelect from "./components/KindSelect.tsx"
 import LabelFilter from "./components/LabelFilter.tsx"
@@ -7,75 +8,145 @@ import ResourceDetail from "./components/ResourceDetail.tsx"
 import ResourceList from "./components/ResourceList.tsx"
 import SearchBar from "./components/SearchBar.tsx"
 
-export interface ResourceMeta {
+export type { ResourceMeta }
+
+function readParam(key: string): string {
+  return new URLSearchParams(window.location.search).get(key) ?? ""
+}
+
+function syncUrl(state: {
   cluster: string
-  kind: string
-  name: string
   namespace: string
-  labels: Record<string, string> | null
+  kind: string
+  labels: string
+  q: string
+  selected: ResourceMeta | null
+}) {
+  const params = new URLSearchParams()
+  if (state.cluster) params.set("cluster", state.cluster)
+  if (state.namespace) params.set("namespace", state.namespace)
+  if (state.kind) params.set("kind", state.kind)
+  if (state.labels) params.set("labels", state.labels)
+  if (state.q) params.set("q", state.q)
+  if (state.selected) {
+    params.set("selCluster", state.selected.cluster)
+    params.set("selKind", state.selected.kind)
+    params.set("selNamespace", state.selected.namespace)
+    params.set("selName", state.selected.name)
+  }
+  const search = params.toString()
+    ? "?" + params.toString()
+    : window.location.pathname
+  history.replaceState(null, "", search)
 }
 
 export default function App() {
   const [clusters, setClusters] = useState<string[]>([])
-  const [selectedCluster, setSelectedCluster] = useState("")
+  const [selectedCluster, setSelectedCluster] = useState(() =>
+    readParam("cluster"),
+  )
   const [namespaces, setNamespaces] = useState<string[]>([])
-  const [selectedNamespace, setSelectedNamespace] = useState("")
+  const [selectedNamespace, setSelectedNamespace] = useState(() =>
+    readParam("namespace"),
+  )
   const [kinds, setKinds] = useState<string[]>([])
-  const [selectedKind, setSelectedKind] = useState("")
-  const [labelFilter, setLabelFilter] = useState("")
+  const [selectedKind, setSelectedKind] = useState(() => readParam("kind"))
+  const [labelFilter, setLabelFilter] = useState(() => readParam("labels"))
   const [resources, setResources] = useState<ResourceMeta[]>([])
   const [selected, setSelected] = useState<ResourceMeta | null>(null)
   const [detail, setDetail] = useState("")
-  const [searchQuery, setSearchQuery] = useState("")
+  const [searchQuery, setSearchQuery] = useState(() => readParam("q"))
+
+  const pendingSelect = useRef({
+    cluster: readParam("selCluster"),
+    kind: readParam("selKind"),
+    namespace: readParam("selNamespace"),
+    name: readParam("selName"),
+  })
 
   useEffect(() => {
-    fetch("/api/clusters")
-      .then((r) => r.json())
-      .then(setClusters)
-      .catch(console.error)
+    api.GET("/api/clusters").then(({ data }) => {
+      if (data) setClusters(data)
+    })
   }, [])
 
   useEffect(() => {
-    const params = new URLSearchParams()
-    if (selectedCluster) params.set("cluster", selectedCluster)
-    fetch(`/api/namespaces?${params}`)
-      .then((r) => r.json())
-      .then(setNamespaces)
-      .catch(console.error)
+    api
+      .GET("/api/namespaces", {
+        params: { query: { cluster: selectedCluster || undefined } },
+      })
+      .then(({ data }) => {
+        if (data) setNamespaces(data)
+      })
   }, [selectedCluster])
 
   useEffect(() => {
-    const params = new URLSearchParams()
-    if (selectedCluster) params.set("cluster", selectedCluster)
-    if (selectedNamespace) params.set("namespace", selectedNamespace)
-    fetch(`/api/kinds?${params}`)
-      .then((r) => r.json())
-      .then(setKinds)
-      .catch(console.error)
+    api
+      .GET("/api/kinds", {
+        params: {
+          query: {
+            cluster: selectedCluster || undefined,
+            namespace: selectedNamespace || undefined,
+          },
+        },
+      })
+      .then(({ data }) => {
+        if (data) setKinds(data)
+      })
   }, [selectedCluster, selectedNamespace])
 
   useEffect(() => {
+    let promise: Promise<ResourceMeta[]>
     if (selectedKind && searchQuery) {
-      const params = new URLSearchParams({ kind: selectedKind })
-      if (selectedCluster) params.set("cluster", selectedCluster)
-      if (selectedNamespace) params.set("namespace", selectedNamespace)
-      if (labelFilter) params.set("labels", labelFilter)
-      params.set("q", searchQuery)
-      fetch(`/api/query?${params}`)
-        .then((r) => r.json())
-        .then((data) => setResources(data ?? []))
-        .catch(console.error)
-      return
+      promise = api
+        .GET("/api/query", {
+          params: {
+            query: {
+              kind: selectedKind,
+              cluster: selectedCluster || undefined,
+              namespace: selectedNamespace || undefined,
+              labels: labelFilter || undefined,
+              q: searchQuery,
+            },
+          },
+        })
+        .then(({ data }) => data ?? [])
+    } else {
+      promise = api
+        .GET("/api/resources", {
+          params: {
+            query: {
+              cluster: selectedCluster || undefined,
+              kind: selectedKind || undefined,
+              namespace: selectedNamespace || undefined,
+              labels: labelFilter || undefined,
+            },
+          },
+        })
+        .then(({ data }) => data ?? [])
     }
-    const params = new URLSearchParams()
-    if (selectedCluster) params.set("cluster", selectedCluster)
-    if (selectedKind) params.set("kind", selectedKind)
-    if (selectedNamespace) params.set("namespace", selectedNamespace)
-    if (labelFilter) params.set("labels", labelFilter)
-    fetch(`/api/resources?${params}`)
-      .then((r) => r.json())
-      .then((data) => setResources(data ?? []))
-      .catch(console.error)
+    promise.then((list) => {
+      setResources(list)
+      const p = pendingSelect.current
+      if (p.name) {
+        const match = list.find(
+          (r) =>
+            r.name === p.name &&
+            r.kind === p.kind &&
+            r.namespace === p.namespace &&
+            r.cluster === p.cluster,
+        )
+        if (match) {
+          setSelected(match)
+          pendingSelect.current = {
+            cluster: "",
+            kind: "",
+            namespace: "",
+            name: "",
+          }
+        }
+      }
+    })
   }, [
     selectedCluster,
     selectedNamespace,
@@ -89,13 +160,38 @@ export default function App() {
       setDetail("")
       return
     }
-    fetch(
-      `/api/resources/${selected.cluster}/${selected.kind}/${selected.namespace}/${selected.name}`,
-    )
-      .then((r) => r.text())
-      .then(setDetail)
-      .catch(console.error)
+    api
+      .GET("/api/resources/{cluster}/{kind}/{namespace}/{name}", {
+        params: {
+          path: {
+            cluster: selected.cluster,
+            kind: selected.kind,
+            namespace: selected.namespace,
+            name: selected.name,
+          },
+        },
+        parseAs: "text",
+      })
+      .then(({ data }) => setDetail(data ?? ""))
   }, [selected])
+
+  useEffect(() => {
+    syncUrl({
+      cluster: selectedCluster,
+      namespace: selectedNamespace,
+      kind: selectedKind,
+      labels: labelFilter,
+      q: searchQuery,
+      selected,
+    })
+  }, [
+    selectedCluster,
+    selectedNamespace,
+    selectedKind,
+    labelFilter,
+    searchQuery,
+    selected,
+  ])
 
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: "monospace" }}>

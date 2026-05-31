@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { api, type DiffResult, type HistoryEntry } from "../api.ts"
 import type { ResourceMeta } from "../App.tsx"
 
 const colors = {
@@ -109,17 +110,6 @@ function YamlHighlight({ text }: { text: string }) {
   )
 }
 
-interface HistoryEntry {
-  sha: string
-  timestamp: string
-  message: string
-}
-
-interface DiffResult {
-  before: string
-  after: string
-}
-
 interface Props {
   resource: ResourceMeta | null
   yaml: string
@@ -141,10 +131,11 @@ export default function ResourceDetail({ resource, yaml }: Props) {
   useEffect(() => {
     if (tab !== "history" || !resource) return
     const { cluster, kind, namespace, name } = resource
-    fetch(`/api/resources/${cluster}/${kind}/${namespace}/${name}/history`)
-      .then((r) => r.json())
-      .then((data) => setHistory(data ?? []))
-      .catch(console.error)
+    api
+      .GET("/api/resources/{cluster}/{kind}/{namespace}/{name}/history", {
+        params: { path: { cluster, kind, namespace, name } },
+      })
+      .then(({ data }) => setHistory(data ?? []))
   }, [tab, resource])
 
   const loadDiff = (sha: string, idx: number) => {
@@ -152,12 +143,16 @@ export default function ResourceDetail({ resource, yaml }: Props) {
     const prevSHA = history[idx + 1].sha
     const { cluster, kind, namespace, name } = resource
     setSelectedSHA(sha)
-    fetch(
-      `/api/resources/${cluster}/${kind}/${namespace}/${name}/diff?from=${prevSHA}&to=${sha}`,
-    )
-      .then((r) => r.json())
-      .then(setDiff)
-      .catch(console.error)
+    api
+      .GET("/api/resources/{cluster}/{kind}/{namespace}/{name}/diff", {
+        params: {
+          path: { cluster, kind, namespace, name },
+          query: { from: prevSHA, to: sha },
+        },
+      })
+      .then(({ data }) => {
+        if (data) setDiff(data)
+      })
   }
 
   if (!resource) {
