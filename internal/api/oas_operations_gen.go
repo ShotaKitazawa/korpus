@@ -6,6 +6,7 @@ package api
 type OperationName = string
 
 const (
+	GetChurnOperation           OperationName = "GetChurn"
 	GetResourceOperation        OperationName = "GetResource"
 	GetResourceDiffOperation    OperationName = "GetResourceDiff"
 	GetResourceHistoryOperation OperationName = "GetResourceHistory"

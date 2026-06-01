@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { api, type ResourceMeta } from "./api.ts"
+import ChurnView from "./components/ChurnView.tsx"
 import ClusterList from "./components/ClusterList.tsx"
 import KindSelect from "./components/KindSelect.tsx"
 import LabelFilter from "./components/LabelFilter.tsx"
@@ -10,8 +11,16 @@ import SearchBar from "./components/SearchBar.tsx"
 
 export type { ResourceMeta }
 
+const DEFAULT_LIMIT = 50
+
 function readParam(key: string): string {
   return new URLSearchParams(window.location.search).get(key) ?? ""
+}
+
+function readIntParam(key: string, fallback: number): number {
+  const v = new URLSearchParams(window.location.search).get(key)
+  const n = v ? parseInt(v, 10) : NaN
+  return isNaN(n) ? fallback : n
 }
 
 function syncUrl(state: {
@@ -20,7 +29,9 @@ function syncUrl(state: {
   kind: string
   labels: string
   q: string
+  offset: number
   selected: ResourceMeta | null
+  view: string
 }) {
   const params = new URLSearchParams()
   if (state.cluster) params.set("cluster", state.cluster)
@@ -28,6 +39,8 @@ function syncUrl(state: {
   if (state.kind) params.set("kind", state.kind)
   if (state.labels) params.set("labels", state.labels)
   if (state.q) params.set("q", state.q)
+  if (state.offset > 0) params.set("offset", String(state.offset))
+  if (state.view && state.view !== "resources") params.set("view", state.view)
   if (state.selected) {
     params.set("selCluster", state.selected.cluster)
     params.set("selKind", state.selected.kind)
@@ -53,9 +66,14 @@ export default function App() {
   const [selectedKind, setSelectedKind] = useState(() => readParam("kind"))
   const [labelFilter, setLabelFilter] = useState(() => readParam("labels"))
   const [resources, setResources] = useState<ResourceMeta[]>([])
+  const [total, setTotal] = useState(0)
+  const [offset, setOffset] = useState(() => readIntParam("offset", 0))
   const [selected, setSelected] = useState<ResourceMeta | null>(null)
   const [detail, setDetail] = useState("")
   const [searchQuery, setSearchQuery] = useState(() => readParam("q"))
+  const [view, setView] = useState<"resources" | "churn">(() =>
+    readParam("view") === "churn" ? "churn" : "resources",
+  )
 
   const pendingSelect = useRef({
     cluster: readParam("selCluster"),
@@ -96,23 +114,30 @@ export default function App() {
   }, [selectedCluster, selectedNamespace])
 
   useEffect(() => {
-    let promise: Promise<ResourceMeta[]>
-    if (selectedKind && searchQuery) {
-      promise = api
-        .GET("/api/query", {
-          params: {
-            query: {
-              kind: selectedKind,
-              cluster: selectedCluster || undefined,
-              namespace: selectedNamespace || undefined,
-              labels: labelFilter || undefined,
-              q: searchQuery,
+    let cancelled = false
+
+    const fetchPage = () => {
+      if (selectedKind && searchQuery) {
+        return api
+          .GET("/api/query", {
+            params: {
+              query: {
+                kind: selectedKind,
+                cluster: selectedCluster || undefined,
+                namespace: selectedNamespace || undefined,
+                labels: labelFilter || undefined,
+                q: searchQuery,
+                offset,
+                limit: DEFAULT_LIMIT,
+              },
             },
-          },
-        })
-        .then(({ data }) => data ?? [])
-    } else {
-      promise = api
+          })
+          .then(({ data }) => ({
+            items: data?.items ?? [],
+            total: data?.total ?? 0,
+          }))
+      }
+      return api
         .GET("/api/resources", {
           params: {
             query: {
@@ -120,16 +145,24 @@ export default function App() {
               kind: selectedKind || undefined,
               namespace: selectedNamespace || undefined,
               labels: labelFilter || undefined,
+              offset,
+              limit: DEFAULT_LIMIT,
             },
           },
         })
-        .then(({ data }) => data ?? [])
+        .then(({ data }) => ({
+          items: data?.items ?? [],
+          total: data?.total ?? 0,
+        }))
     }
-    promise.then((list) => {
-      setResources(list)
+
+    fetchPage().then(({ items, total }) => {
+      if (cancelled) return
+      setResources(items)
+      setTotal(total)
       const p = pendingSelect.current
       if (p.name) {
-        const match = list.find(
+        const match = items.find(
           (r) =>
             r.name === p.name &&
             r.kind === p.kind &&
@@ -147,12 +180,17 @@ export default function App() {
         }
       }
     })
+
+    return () => {
+      cancelled = true
+    }
   }, [
     selectedCluster,
     selectedNamespace,
     selectedKind,
     searchQuery,
     labelFilter,
+    offset,
   ])
 
   useEffect(() => {
@@ -182,7 +220,9 @@ export default function App() {
       kind: selectedKind,
       labels: labelFilter,
       q: searchQuery,
+      offset,
       selected,
+      view,
     })
   }, [
     selectedCluster,
@@ -190,8 +230,15 @@ export default function App() {
     selectedKind,
     labelFilter,
     searchQuery,
+    offset,
     selected,
+    view,
   ])
+
+  const resetFilters = () => {
+    setSelected(null)
+    setOffset(0)
+  }
 
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: "monospace" }}>
@@ -210,6 +257,7 @@ export default function App() {
             setSelectedCluster(c)
             setSelectedNamespace("")
             setSearchQuery("")
+            setOffset(0)
             setSelected(null)
           }}
         />
@@ -230,6 +278,7 @@ export default function App() {
           onSelect={(ns) => {
             setSelectedNamespace(ns)
             setSearchQuery("")
+            setOffset(0)
             setSelected(null)
           }}
         />
@@ -241,6 +290,7 @@ export default function App() {
             borderBottom: "1px solid #ccc",
             display: "flex",
             gap: 8,
+            alignItems: "center",
           }}
         >
           <KindSelect
@@ -248,42 +298,82 @@ export default function App() {
             value={selectedKind}
             onChange={(k) => {
               setSelectedKind(k)
-              setSelected(null)
+              setOffset(0)
+              resetFilters()
             }}
           />
           <LabelFilter
             value={labelFilter}
             onChange={(v) => {
               setLabelFilter(v)
-              setSelected(null)
+              setOffset(0)
+              resetFilters()
             }}
           />
           <SearchBar
             query={searchQuery}
             onChange={(q) => {
               setSearchQuery(q)
-              setSelected(null)
+              setOffset(0)
+              resetFilters()
             }}
           />
-        </div>
-        <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-          <div
+          <button
+            onClick={() => setView(view === "churn" ? "resources" : "churn")}
             style={{
-              width: 300,
-              borderRight: "1px solid #ccc",
-              overflowY: "auto",
+              fontFamily: "monospace",
+              fontSize: 12,
+              cursor: "pointer",
+              padding: "2px 10px",
+              background: view === "churn" ? "#333" : undefined,
+              color: view === "churn" ? "#fff" : undefined,
+              border: "1px solid #ccc",
+              borderRadius: 2,
+              marginLeft: "auto",
             }}
           >
-            <ResourceList
-              resources={resources}
-              onSelect={setSelected}
-              selected={selected}
-            />
-          </div>
-          <div style={{ flex: 1, overflow: "hidden", padding: 8 }}>
-            <ResourceDetail resource={selected} yaml={detail} />
-          </div>
+            Churn
+          </button>
         </div>
+
+        {view === "churn" ? (
+          <ChurnView
+            onSelectKind={(kind) => {
+              setSelectedKind(kind)
+              setOffset(0)
+              setSelected(null)
+              setView("resources")
+            }}
+          />
+        ) : (
+          <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+            <div
+              style={{
+                width: 300,
+                borderRight: "1px solid #ccc",
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <ResourceList
+                resources={resources}
+                total={total}
+                offset={offset}
+                limit={DEFAULT_LIMIT}
+                onSelect={setSelected}
+                selected={selected}
+                onOffsetChange={(o) => {
+                  setOffset(o)
+                  setSelected(null)
+                }}
+              />
+            </div>
+            <div style={{ flex: 1, overflow: "hidden", padding: 8 }}>
+              <ResourceDetail resource={selected} yaml={detail} />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

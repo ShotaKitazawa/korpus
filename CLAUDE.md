@@ -8,16 +8,24 @@ Two binaries:
 
 ## Commands
 
-All commands must be run via `mise run <task>`. Do not invoke `go`, `pnpm`, or other tools directly.
+**All commands must be run via `mise run <task>`.** Never invoke `go`, `pnpm`, `goimports`, `oxfmt`, or any other tool directly — always use the mise task equivalents below.
 All `mise run` tasks may be executed without human confirmation.
 
 Key tasks:
 - `mise run build` — compile all Go packages
 - `mise run test` — run all Go tests
-- `mise run format` — run goimports
+- `mise run format` — run goimports (Go)
+- `mise run format-frontend` — run oxfmt (TypeScript/TSX)
 - `mise run generate` — regenerate ogen + openapi-typescript artifacts (run after editing `openapi.yaml`)
 - `mise run ci` — full CI pipeline (backend + frontend)
 - `mise run pre-merge` — generate + format + ci
+
+**Workflow for schema changes:**
+1. Edit `openapi.yaml`
+2. `mise run generate`
+3. Implement handlers / update frontend
+4. `mise run format-frontend` (after writing TSX — oxfmt may reformat)
+5. `mise run ci`
 - `mise run dev` — start server (air hot-reload) + frontend (Vite HMR) in parallel
 
 ## Architecture

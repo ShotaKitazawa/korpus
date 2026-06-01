@@ -13,6 +13,13 @@ type UnimplementedHandler struct{}
 
 var _ Handler = UnimplementedHandler{}
 
+// GetChurn implements GetChurn operation.
+//
+// GET /api/churn
+func (UnimplementedHandler) GetChurn(ctx context.Context, params GetChurnParams) (r []ChurnEntry, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // GetResource implements GetResource operation.
 //
 // GET /api/resources/{cluster}/{kind}/{namespace}/{name}
@@ -72,7 +79,7 @@ func (UnimplementedHandler) ListNamespaces(ctx context.Context, params ListNames
 // ListResources implements ListResources operation.
 //
 // GET /api/resources
-func (UnimplementedHandler) ListResources(ctx context.Context, params ListResourcesParams) (r []ResourceMeta, _ error) {
+func (UnimplementedHandler) ListResources(ctx context.Context, params ListResourcesParams) (r *ResourceListPage, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

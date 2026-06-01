@@ -10,20 +10,27 @@ import (
 
 const commitMarker = "---KORPUS-COMMIT---"
 
-// Analyze inspects the last n commits in repoPath and warns about high-churn resources.
-// A resource is flagged if it appears in at least threshold fraction of the inspected commits.
-func Analyze(repoPath string, n int, subDir string, threshold float64, logger *slog.Logger) error {
+// Entry represents a resource's churn statistics over an analyzed window.
+type Entry struct {
+	Resource string
+	Count    int
+	Total    int
+}
+
+// Report collects churn data for the last n commits in repoPath under subDir.
+// Returns all resources that appear in at least one commit, along with the
+// total number of commits analyzed.
+func Report(repoPath string, n int, subDir string) ([]Entry, int, error) {
 	out, err := exec.Command("git", "-C", repoPath, "log",
 		fmt.Sprintf("-n%d", n),
 		"--pretty=format:"+commitMarker,
 		"--name-only",
 	).Output()
 	if err != nil {
-		return fmt.Errorf("git log: %w", err)
+		return nil, 0, fmt.Errorf("git log: %w", err)
 	}
 
 	commitBlocks := strings.Split(string(out), commitMarker)
-	// The first element before the first marker is empty; skip it.
 	var commits [][]string
 	for _, block := range commitBlocks {
 		var files []string
@@ -41,10 +48,9 @@ func Analyze(repoPath string, n int, subDir string, threshold float64, logger *s
 
 	total := len(commits)
 	if total == 0 {
-		return nil
+		return nil, 0, nil
 	}
 
-	// Count how many commits changed each resource.
 	counts := make(map[string]int)
 	for _, files := range commits {
 		seen := make(map[string]struct{})
@@ -60,12 +66,29 @@ func Analyze(repoPath string, n int, subDir string, threshold float64, logger *s
 		}
 	}
 
-	minCount := int(math.Ceil(float64(total) * threshold))
+	entries := make([]Entry, 0, len(counts))
 	for res, count := range counts {
-		if count >= minCount {
+		entries = append(entries, Entry{Resource: res, Count: count, Total: total})
+	}
+	return entries, total, nil
+}
+
+// Analyze inspects the last n commits in repoPath and warns about high-churn resources.
+// A resource is flagged if it appears in at least threshold fraction of the inspected commits.
+func Analyze(repoPath string, n int, subDir string, threshold float64, logger *slog.Logger) error {
+	entries, total, err := Report(repoPath, n, subDir)
+	if err != nil {
+		return err
+	}
+	if total == 0 {
+		return nil
+	}
+	minCount := int(math.Ceil(float64(total) * threshold))
+	for _, e := range entries {
+		if e.Count >= minCount {
 			logger.Warn("high-churn resource detected",
-				"resource", res,
-				"changed", fmt.Sprintf("%d/%d", count, total),
+				"resource", e.Resource,
+				"changed", fmt.Sprintf("%d/%d", e.Count, e.Total),
 				"hint", "consider adding to config.yaml excludes",
 			)
 		}

@@ -7,6 +7,65 @@ import (
 	"time"
 )
 
+// Ref: #/components/schemas/ChurnEntry
+type ChurnEntry struct {
+	Cluster  string  `json:"cluster"`
+	Resource string  `json:"resource"`
+	Count    int     `json:"count"`
+	Total    int     `json:"total"`
+	Ratio    float64 `json:"ratio"`
+}
+
+// GetCluster returns the value of Cluster.
+func (s *ChurnEntry) GetCluster() string {
+	return s.Cluster
+}
+
+// GetResource returns the value of Resource.
+func (s *ChurnEntry) GetResource() string {
+	return s.Resource
+}
+
+// GetCount returns the value of Count.
+func (s *ChurnEntry) GetCount() int {
+	return s.Count
+}
+
+// GetTotal returns the value of Total.
+func (s *ChurnEntry) GetTotal() int {
+	return s.Total
+}
+
+// GetRatio returns the value of Ratio.
+func (s *ChurnEntry) GetRatio() float64 {
+	return s.Ratio
+}
+
+// SetCluster sets the value of Cluster.
+func (s *ChurnEntry) SetCluster(val string) {
+	s.Cluster = val
+}
+
+// SetResource sets the value of Resource.
+func (s *ChurnEntry) SetResource(val string) {
+	s.Resource = val
+}
+
+// SetCount sets the value of Count.
+func (s *ChurnEntry) SetCount(val int) {
+	s.Count = val
+}
+
+// SetTotal sets the value of Total.
+func (s *ChurnEntry) SetTotal(val int) {
+	s.Total = val
+}
+
+// SetRatio sets the value of Ratio.
+func (s *ChurnEntry) SetRatio(val float64) {
+	s.Ratio = val
+}
+
 // Ref: #/components/schemas/ClusterStatus
 type ClusterStatus struct {
 	Name          string         `json:"name"`
@@ -168,6 +227,52 @@ func (s *HistoryEntry) SetTimestamp(val time.Time) {
 // SetMessage sets the value of Message.
 func (s *HistoryEntry) SetMessage(val string) {
 	s.Message = val
+}
+
+// NewOptFloat64 returns new OptFloat64 with value set to v.
+func NewOptFloat64(v float64) OptFloat64 {
+	return OptFloat64{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptFloat64 is optional float64.
+type OptFloat64 struct {
+	Value float64
+	Set   bool
+}
+
+// IsSet returns true if OptFloat64 was set.
+func (o OptFloat64) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptFloat64) Reset() {
+	var v float64
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptFloat64) SetTo(v float64) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptFloat64) Get() (v float64, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptFloat64) Or(d float64) float64 {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
 }
 
 // NewOptInt returns new OptInt with value set to v.
@@ -393,9 +498,55 @@ type QueryResourcesBadRequest struct{}
 
 func (*QueryResourcesBadRequest) queryResourcesRes() {}
 
-type QueryResourcesOKApplicationJSON []ResourceMeta
+// Ref: #/components/schemas/ResourceListPage
+type ResourceListPage struct {
+	Items  []ResourceMeta `json:"items"`
+	Total  int            `json:"total"`
+	Offset int            `json:"offset"`
+	Limit  int            `json:"limit"`
+}
 
-func (*QueryResourcesOKApplicationJSON) queryResourcesRes() {}
+// GetItems returns the value of Items.
+func (s *ResourceListPage) GetItems() []ResourceMeta {
+	return s.Items
+}
+
+// GetTotal returns the value of Total.
+func (s *ResourceListPage) GetTotal() int {
+	return s.Total
+}
+
+// GetOffset returns the value of Offset.
+func (s *ResourceListPage) GetOffset() int {
+	return s.Offset
+}
+
+// GetLimit returns the value of Limit.
+func (s *ResourceListPage) GetLimit() int {
+	return s.Limit
+}
+
+// SetItems sets the value of Items.
+func (s *ResourceListPage) SetItems(val []ResourceMeta) {
+	s.Items = val
+}
+
+// SetTotal sets the value of Total.
+func (s *ResourceListPage) SetTotal(val int) {
+	s.Total = val
+}
+
+// SetOffset sets the value of Offset.
+func (s *ResourceListPage) SetOffset(val int) {
+	s.Offset = val
+}
+
+// SetLimit sets the value of Limit.
+func (s *ResourceListPage) SetLimit(val int) {
+	s.Limit = val
+}
+
+func (*ResourceListPage) queryResourcesRes() {}
 
 // Ref: #/components/schemas/ResourceMeta
 type ResourceMeta struct {

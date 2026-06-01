@@ -8,6 +8,10 @@ import (
 
 // Handler handles operations described by OpenAPI v3 specification.
 type Handler interface {
+	// GetChurn implements GetChurn operation.
+	//
+	// GET /api/churn
+	GetChurn(ctx context.Context, params GetChurnParams) ([]ChurnEntry, error)
 	// GetResource implements GetResource operation.
 	//
 	// GET /api/resources/{cluster}/{kind}/{namespace}/{name}
@@ -43,7 +47,7 @@ type Handler interface {
 	// ListResources implements ListResources operation.
 	//
 	// GET /api/resources
-	ListResources(ctx context.Context, params ListResourcesParams) ([]ResourceMeta, error)
+	ListResources(ctx context.Context, params ListResourcesParams) (*ResourceListPage, error)
 	// QueryResources implements QueryResources operation.
 	//
 	// GET /api/query

@@ -97,15 +97,23 @@ paths:
           in: query
           schema:
             type: string
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/ResourceMeta"
+                $ref: "#/components/schemas/ResourceListPage"
 
   /api/resources/{cluster}/{kind}/{namespace}/{name}:
     get:
@@ -253,6 +261,44 @@ paths:
           in: query
           schema:
             type: string
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceListPage"
+        "400":
+          description: Bad Request
+
+  /api/churn:
+    get:
+      operationId: GetChurn
+      parameters:
+        - name: cluster
+          in: query
+          schema:
+            type: string
+        - name: n
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: threshold
+          in: query
+          schema:
+            type: number
+            default: 0.5
       responses:
         "200":
           description: OK
@@ -261,9 +307,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/ResourceMeta"
-        "400":
-          description: Bad Request
+                  $ref: "#/components/schemas/ChurnEntry"
 
 components:
   schemas:
@@ -344,3 +388,42 @@ components:
           type: string
         after:
           type: string
+
+    ResourceListPage:
+      type: object
+      required:
+        - items
+        - total
+        - offset
+        - limit
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResourceMeta"
+        total:
+          type: integer
+        offset:
+          type: integer
+        limit:
+          type: integer
+
+    ChurnEntry:
+      type: object
+      required:
+        - cluster
+        - resource
+        - count
+        - total
+        - ratio
+      properties:
+        cluster:
+          type: string
+        resource:
+          type: string
+        count:
+          type: integer
+        total:
+          type: integer
+        ratio:
+          type: number

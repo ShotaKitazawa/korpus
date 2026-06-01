@@ -7,6 +7,29 @@ import (
 	"github.com/ogen-go/ogen/validate"
 )
 
+func (s *ChurnEntry) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := (validate.Float{}).Validate(float64(s.Ratio)); err != nil {
+			return errors.Wrap(err, "float")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "ratio",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s GetResourceHistoryOKApplicationJSON) Validate() error {
 	alias := ([]HistoryEntry)(s)
 	if alias == nil {
@@ -15,10 +38,25 @@ func (s GetResourceHistoryOKApplicationJSON) Validate() error {
 	return nil
 }
 
-func (s QueryResourcesOKApplicationJSON) Validate() error {
-	alias := ([]ResourceMeta)(s)
-	if alias == nil {
-		return errors.New("nil is invalid value")
+func (s *ResourceListPage) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if s.Items == nil {
+			return errors.New("nil is invalid value")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "items",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
 	}
 	return nil
 }

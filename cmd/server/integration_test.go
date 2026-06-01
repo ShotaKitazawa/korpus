@@ -197,6 +197,13 @@ func TestKinds_ByNamespace(t *testing.T) {
 	assert.Equal(t, []string{"Pod"}, kinds)
 }
 
+type resourcePage struct {
+	Items  []index.ResourceMeta `json:"items"`
+	Total  int                  `json:"total"`
+	Offset int                  `json:"offset"`
+	Limit  int                  `json:"limit"`
+}
+
 func TestResources_All(t *testing.T) {
 	ts := buildTestServer(t, map[string]*ClusterState{"test-cluster": buildTestState(t)})
 
@@ -204,9 +211,25 @@ func TestResources_All(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	var resources []index.ResourceMeta
-	decodeJSON(t, resp, &resources)
-	assert.Len(t, resources, 3)
+	var page resourcePage
+	decodeJSON(t, resp, &page)
+	assert.Equal(t, 3, page.Total)
+	assert.Len(t, page.Items, 3)
+}
+
+func TestResources_Pagination(t *testing.T) {
+	ts := buildTestServer(t, map[string]*ClusterState{"test-cluster": buildTestState(t)})
+
+	resp, err := http.Get(ts.URL + "/api/resources?offset=0&limit=2")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	var page resourcePage
+	decodeJSON(t, resp, &page)
+	assert.Equal(t, 3, page.Total)
+	assert.Len(t, page.Items, 2)
+	assert.Equal(t, 0, page.Offset)
+	assert.Equal(t, 2, page.Limit)
 }
 
 func TestResources_ByKind(t *testing.T) {
@@ -216,10 +239,10 @@ func TestResources_ByKind(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	var resources []index.ResourceMeta
-	decodeJSON(t, resp, &resources)
-	require.Len(t, resources, 1)
-	assert.Equal(t, "my-pod", resources[0].Name)
+	var page resourcePage
+	decodeJSON(t, resp, &page)
+	require.Len(t, page.Items, 1)
+	assert.Equal(t, "my-pod", page.Items[0].Name)
 }
 
 func TestResources_ByLabel(t *testing.T) {
@@ -229,9 +252,9 @@ func TestResources_ByLabel(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	var resources []index.ResourceMeta
-	decodeJSON(t, resp, &resources)
-	assert.Len(t, resources, 1)
+	var page resourcePage
+	decodeJSON(t, resp, &page)
+	assert.Len(t, page.Items, 1)
 }
 
 func TestResources_LabelKeyOnly(t *testing.T) {
@@ -241,9 +264,9 @@ func TestResources_LabelKeyOnly(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	var resources []index.ResourceMeta
-	decodeJSON(t, resp, &resources)
-	assert.Len(t, resources, 1)
+	var page resourcePage
+	decodeJSON(t, resp, &page)
+	assert.Len(t, page.Items, 1)
 }
 
 func TestResourceDetail(t *testing.T) {
@@ -273,9 +296,9 @@ func TestQuery_CEL(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	var resources []index.ResourceMeta
-	decodeJSON(t, resp, &resources)
-	assert.Len(t, resources, 1)
+	var page resourcePage
+	decodeJSON(t, resp, &page)
+	assert.Len(t, page.Items, 1)
 }
 
 func TestQuery_KindRequired(t *testing.T) {

@@ -22,6 +22,7 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	api "github.com/ShotaKitazawa/korpus/internal/api"
+	"github.com/ShotaKitazawa/korpus/internal/churn"
 	"github.com/ShotaKitazawa/korpus/internal/config"
 	"github.com/ShotaKitazawa/korpus/internal/gitclient"
 	"github.com/ShotaKitazawa/korpus/internal/index"
@@ -32,7 +33,8 @@ var frontendDist embed.FS
 
 // ClusterState bundles the in-memory index, the git client, and pull status for one cluster.
 type ClusterState struct {
-	idx *index.Index
+	idx    *index.Index
+	subDir string
 
 	mu            sync.RWMutex
 	gc            *gitclient.Client
@@ -120,6 +122,17 @@ func (s *ClusterState) fileAt(relPath, sha string) (string, error) {
 	return gc.FileAtCommit(relPath, sha)
 }
 
+func (s *ClusterState) churnReport(n int) ([]churn.Entry, int, error) {
+	s.mu.RLock()
+	workDir := s.workDir
+	subDir := s.subDir
+	s.mu.RUnlock()
+	if workDir == "" {
+		return nil, 0, fmt.Errorf("cluster not ready")
+	}
+	return churn.Report(workDir, n, subDir)
+}
+
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to config file")
 	flag.Parse()
@@ -137,7 +150,8 @@ func main() {
 	states := make(map[string]*ClusterState, len(cfg.Spec.Clusters))
 	for _, c := range cfg.Spec.Clusters {
 		states[c.Name] = &ClusterState{
-			idx: index.New(c.Name, cfg.Spec.Index.Fields),
+			idx:    index.New(c.Name, cfg.Spec.Index.Fields),
+			subDir: c.Git.SubDir,
 		}
 	}
 
@@ -453,6 +467,54 @@ func buildMCPServer(states map[string]*ClusterState, clusterNames []string) http
 			return mcp.NewToolResultText("to: " + err.Error()), nil
 		}
 		return mcp.NewToolResultText(mustJSON(map[string]string{"before": before, "after": after})), nil
+	})
+
+	s.AddTool(mcp.NewTool("get_churn",
+		mcp.WithDescription("Get churn statistics for K8s resources — shows which resource types change most frequently in git history"),
+		mcp.WithString("cluster", mcp.Description("Cluster name (optional, omit for all clusters)")),
+		mcp.WithNumber("n", mcp.Description("Number of commits to analyze (default 50)")),
+		mcp.WithNumber("threshold", mcp.Description("Minimum change ratio to include (0.0–1.0, default 0.5)")),
+	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		cluster, _ := args["cluster"].(string)
+		n := 50
+		if nv, ok := args["n"].(float64); ok && nv > 0 {
+			n = int(nv)
+		}
+		threshold := 0.5
+		if tv, ok := args["threshold"].(float64); ok {
+			threshold = tv
+		}
+		type churnResult struct {
+			Cluster  string  `json:"cluster"`
+			Resource string  `json:"resource"`
+			Count    int     `json:"count"`
+			Total    int     `json:"total"`
+			Ratio    float64 `json:"ratio"`
+		}
+		var result []churnResult
+		for name, state := range states {
+			if cluster != "" && name != cluster {
+				continue
+			}
+			entries, _, err := state.churnReport(n)
+			if err != nil {
+				continue
+			}
+			for _, e := range entries {
+				ratio := float64(e.Count) / float64(e.Total)
+				if ratio >= threshold {
+					result = append(result, churnResult{
+						Cluster:  name,
+						Resource: e.Resource,
+						Count:    e.Count,
+						Total:    e.Total,
+						Ratio:    ratio,
+					})
+				}
+			}
+		}
+		return mcp.NewToolResultText(mustJSON(result)), nil
 	})
 
 	s.AddTool(mcp.NewTool("query_resources",

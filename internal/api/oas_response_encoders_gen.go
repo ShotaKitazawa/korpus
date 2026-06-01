@@ -12,6 +12,24 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+func encodeGetChurnResponse(response []ChurnEntry, w http.ResponseWriter, span trace.Span) error {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(200)
+	span.SetStatus(codes.Ok, http.StatusText(200))
+
+	e := new(jx.Encoder)
+	e.ArrStart()
+	for _, elem := range response {
+		elem.Encode(e)
+	}
+	e.ArrEnd()
+	if _, err := e.WriteTo(w); err != nil {
+		return errors.Wrap(err, "write")
+	}
+
+	return nil
+}
+
 func encodeGetResourceResponse(response GetResourceRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
 	case *GetResourceOK:
@@ -185,17 +203,13 @@ func encodeListNamespacesResponse(response []string, w http.ResponseWriter, span
 	return nil
 }
 
-func encodeListResourcesResponse(response []ResourceMeta, w http.ResponseWriter, span trace.Span) error {
+func encodeListResourcesResponse(response *ResourceListPage, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
 	span.SetStatus(codes.Ok, http.StatusText(200))
 
 	e := new(jx.Encoder)
-	e.ArrStart()
-	for _, elem := range response {
-		elem.Encode(e)
-	}
-	e.ArrEnd()
+	response.Encode(e)
 	if _, err := e.WriteTo(w); err != nil {
 		return errors.Wrap(err, "write")
 	}
@@ -205,7 +219,7 @@ func encodeListResourcesResponse(response []ResourceMeta, w http.ResponseWriter,
 
 func encodeQueryResourcesResponse(response QueryResourcesRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *QueryResourcesOKApplicationJSON:
+	case *ResourceListPage:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(200)
 		span.SetStatus(codes.Ok, http.StatusText(200))

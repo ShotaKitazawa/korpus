@@ -14,3 +14,5 @@ export type { components }
 export type ResourceMeta = components["schemas"]["ResourceMeta"]
 export type HistoryEntry = components["schemas"]["HistoryEntry"]
 export type DiffResult = components["schemas"]["DiffResult"]
+export type ResourceListPage = components["schemas"]["ResourceListPage"]
+export type ChurnEntry = components["schemas"]["ChurnEntry"]
