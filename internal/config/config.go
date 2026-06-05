@@ -59,11 +59,12 @@ type ClusterConfig struct {
 }
 
 type GitConfig struct {
-	Repo   string       `yaml:"repo"`
-	Branch string       `yaml:"branch"`
-	SubDir string       `yaml:"subDir"`
-	Token  string       `yaml:"token"`
-	Author AuthorConfig `yaml:"author"`
+	Repo      string       `yaml:"repo"`
+	Branch    string       `yaml:"branch"`
+	SubDir    string       `yaml:"subDir"`
+	Token     string       `yaml:"token"`
+	TokenFile string       `yaml:"tokenFile"`
+	Author    AuthorConfig `yaml:"author"`
 }
 
 type AuthorConfig struct {

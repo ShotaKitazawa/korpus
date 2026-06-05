@@ -3,6 +3,8 @@ package gitclient
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -20,26 +22,42 @@ type HistoryEntry struct {
 
 // Client wraps a go-git repository.
 type Client struct {
-	repo  *git.Repository
-	token string
+	repo      *git.Repository
+	token     string
+	tokenFile string
+}
+
+// loadToken returns the effective token: reads tokenFile on each call if set, falls back to token.
+func (c *Client) loadToken() string {
+	if c.tokenFile == "" {
+		return c.token
+	}
+	data, err := os.ReadFile(c.tokenFile)
+	if err != nil {
+		return c.token
+	}
+	return strings.TrimSpace(string(data))
 }
 
 // Clone clones repoURL into dir. depth=1 produces a shallow clone; depth=0 fetches full history.
-func Clone(ctx context.Context, repoURL, branch, token, dir string, depth int) (*Client, error) {
+// tokenFile, if non-empty, is read before each git operation to support token rotation.
+func Clone(ctx context.Context, repoURL, branch, token, tokenFile, dir string, depth int) (*Client, error) {
+	c := &Client{token: token, tokenFile: tokenFile}
 	opts := &git.CloneOptions{
 		URL:           repoURL,
 		ReferenceName: plumbing.NewBranchReferenceName(branch),
 		Depth:         depth,
 		SingleBranch:  true,
 	}
-	if token != "" {
-		opts.Auth = &http.BasicAuth{Username: "x-token", Password: token}
+	if tok := c.loadToken(); tok != "" {
+		opts.Auth = &http.BasicAuth{Username: "x-token", Password: tok}
 	}
 	repo, err := git.PlainCloneContext(ctx, dir, false, opts)
 	if err != nil {
 		return nil, fmt.Errorf("git clone: %w", err)
 	}
-	return &Client{repo: repo, token: token}, nil
+	c.repo = repo
+	return c, nil
 }
 
 // IsClean returns true when the working tree has no changes.
@@ -62,8 +80,8 @@ func (c *Client) Pull() error {
 		return err
 	}
 	opts := &git.PullOptions{SingleBranch: true}
-	if c.token != "" {
-		opts.Auth = &http.BasicAuth{Username: "x-token", Password: c.token}
+	if tok := c.loadToken(); tok != "" {
+		opts.Auth = &http.BasicAuth{Username: "x-token", Password: tok}
 	}
 	err = wt.Pull(opts)
 	if err == git.NoErrAlreadyUpToDate {
@@ -136,8 +154,8 @@ func (c *Client) CommitAndPush(name, email, message string) error {
 	}
 
 	pushOpts := &git.PushOptions{}
-	if c.token != "" {
-		pushOpts.Auth = &http.BasicAuth{Username: "x-token", Password: c.token}
+	if tok := c.loadToken(); tok != "" {
+		pushOpts.Auth = &http.BasicAuth{Username: "x-token", Password: tok}
 	}
 	if err := c.repo.Push(pushOpts); err != nil && err != git.NoErrAlreadyUpToDate {
 		return fmt.Errorf("git push: %w", err)

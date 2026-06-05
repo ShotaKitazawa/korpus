@@ -44,7 +44,7 @@ func TestClone(t *testing.T) {
 	bareDir := setupBareRepo(t)
 	cloneDir := t.TempDir()
 
-	client, err := Clone(context.Background(), "file://"+bareDir, "main", "", cloneDir, 1)
+	client, err := Clone(context.Background(), "file://"+bareDir, "main", "", "", cloneDir, 1)
 	require.NoError(t, err)
 	assert.NotNil(t, client)
 	assert.FileExists(t, filepath.Join(cloneDir, "README.md"))
@@ -53,7 +53,7 @@ func TestClone(t *testing.T) {
 func TestIsClean_Clean(t *testing.T) {
 	bareDir := setupBareRepo(t)
 	cloneDir := t.TempDir()
-	client, err := Clone(context.Background(), "file://"+bareDir, "main", "", cloneDir, 1)
+	client, err := Clone(context.Background(), "file://"+bareDir, "main", "", "", cloneDir, 1)
 	require.NoError(t, err)
 
 	clean, err := client.IsClean()
@@ -64,7 +64,7 @@ func TestIsClean_Clean(t *testing.T) {
 func TestIsClean_Dirty(t *testing.T) {
 	bareDir := setupBareRepo(t)
 	cloneDir := t.TempDir()
-	client, err := Clone(context.Background(), "file://"+bareDir, "main", "", cloneDir, 1)
+	client, err := Clone(context.Background(), "file://"+bareDir, "main", "", "", cloneDir, 1)
 	require.NoError(t, err)
 
 	require.NoError(t, os.WriteFile(filepath.Join(cloneDir, "new.yaml"), []byte("data: 1"), 0o644))
@@ -77,7 +77,7 @@ func TestIsClean_Dirty(t *testing.T) {
 func TestCommitAndPush(t *testing.T) {
 	bareDir := setupBareRepo(t)
 	cloneDir := t.TempDir()
-	client, err := Clone(context.Background(), "file://"+bareDir, "main", "", cloneDir, 1)
+	client, err := Clone(context.Background(), "file://"+bareDir, "main", "", "", cloneDir, 1)
 	require.NoError(t, err)
 
 	require.NoError(t, os.WriteFile(filepath.Join(cloneDir, "backup.yaml"), []byte("data: 1"), 0o644))
@@ -96,7 +96,7 @@ func setupRepoWithHistory(t *testing.T) (string, *Client) {
 	cloneDir := t.TempDir()
 
 	// full clone (depth=0) to allow history traversal
-	client, err := Clone(context.Background(), "file://"+bareDir, "main", "", cloneDir, 0)
+	client, err := Clone(context.Background(), "file://"+bareDir, "main", "", "", cloneDir, 0)
 	require.NoError(t, err)
 
 	// commit 1 — create the file
@@ -119,6 +119,45 @@ func TestFileHistory(t *testing.T) {
 	assert.Contains(t, entries[0].Message, "backup: v2")
 	assert.Contains(t, entries[1].Message, "backup: v1")
 	assert.NotEmpty(t, entries[0].SHA)
+}
+
+func TestLoadToken(t *testing.T) {
+	t.Run("static token", func(t *testing.T) {
+		c := &Client{token: "static"}
+		assert.Equal(t, "static", c.loadToken())
+	})
+
+	t.Run("tokenFile overrides token", func(t *testing.T) {
+		f, err := os.CreateTemp("", "token-*")
+		require.NoError(t, err)
+		t.Cleanup(func() { os.Remove(f.Name()) })
+		_, err = f.WriteString("file-token\n")
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+
+		c := &Client{token: "static", tokenFile: f.Name()}
+		assert.Equal(t, "file-token", c.loadToken())
+	})
+
+	t.Run("tokenFile updated between calls", func(t *testing.T) {
+		f, err := os.CreateTemp("", "token-*")
+		require.NoError(t, err)
+		t.Cleanup(func() { os.Remove(f.Name()) })
+		_, err = f.WriteString("token-v1")
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+
+		c := &Client{tokenFile: f.Name()}
+		assert.Equal(t, "token-v1", c.loadToken())
+
+		require.NoError(t, os.WriteFile(f.Name(), []byte("token-v2"), 0o600))
+		assert.Equal(t, "token-v2", c.loadToken())
+	})
+
+	t.Run("tokenFile missing falls back to token", func(t *testing.T) {
+		c := &Client{token: "fallback", tokenFile: "/nonexistent/token"}
+		assert.Equal(t, "fallback", c.loadToken())
+	})
 }
 
 func TestFileAtCommit(t *testing.T) {

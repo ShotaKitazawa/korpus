@@ -122,6 +122,23 @@ spec:
 	assert.Equal(t, "secret-token", cfg.Spec.Clusters[0].Git.Token)
 }
 
+func TestLoadServer_Clusters_TokenFile(t *testing.T) {
+	yaml := `
+kind: ServerConfig
+spec:
+  clusters:
+    - name: prod
+      git:
+        repo: https://github.com/org/k8s-prod.git
+        tokenFile: /var/run/secrets/git-token
+`
+	path := writeTempConfig(t, yaml)
+	cfg, err := LoadServer(path)
+	require.NoError(t, err)
+	assert.Equal(t, "/var/run/secrets/git-token", cfg.Spec.Clusters[0].Git.TokenFile)
+	assert.Empty(t, cfg.Spec.Clusters[0].Git.Token)
+}
+
 func TestLoadServer_EmptyClusters(t *testing.T) {
 	path := writeTempConfig(t, "kind: ServerConfig\nspec:\n  addr: \":8080\"\n")
 	_, err := LoadServer(path)

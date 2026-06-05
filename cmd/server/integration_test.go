@@ -94,7 +94,7 @@ func buildTestStateWithGit(t *testing.T) *ClusterState {
 	bareDir := setupBareRepoForTest(t)
 	workDir := t.TempDir()
 
-	client, err := gitclient.Clone(context.Background(), "file://"+bareDir, "main", "", workDir, 0)
+	client, err := gitclient.Clone(context.Background(), "file://"+bareDir, "main", "", "", workDir, 0)
 	require.NoError(t, err)
 
 	podV1 := `kind: Pod

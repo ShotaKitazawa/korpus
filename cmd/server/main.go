@@ -167,7 +167,7 @@ func main() {
 			}
 			defer os.RemoveAll(workDir)
 
-			gc, err := gitclient.Clone(ctx, c.Git.Repo, c.Git.Branch, c.Git.Token, workDir, 0)
+			gc, err := gitclient.Clone(ctx, c.Git.Repo, c.Git.Branch, c.Git.Token, c.Git.TokenFile, workDir, 0)
 			if err != nil {
 				logger.Error("git clone", "cluster", c.Name, "err", err)
 				return
@@ -200,7 +200,7 @@ func main() {
 							state.recordPull(err)
 							continue
 						}
-						gc, err = gitclient.Clone(ctx, c.Git.Repo, c.Git.Branch, c.Git.Token, workDir, 0)
+						gc, err = gitclient.Clone(ctx, c.Git.Repo, c.Git.Branch, c.Git.Token, c.Git.TokenFile, workDir, 0)
 						if err != nil {
 							logger.Error("re-clone failed", "cluster", c.Name, "err", err)
 							state.recordPull(err)
