@@ -2,14 +2,17 @@ package gitclient
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v5"
+	gitconfig "github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 )
 
@@ -23,6 +26,7 @@ type HistoryEntry struct {
 // Client wraps a go-git repository.
 type Client struct {
 	repo      *git.Repository
+	branch    string
 	token     string
 	tokenFile string
 }
@@ -41,8 +45,10 @@ func (c *Client) loadToken() string {
 
 // Clone clones repoURL into dir. depth=1 produces a shallow clone; depth=0 fetches full history.
 // tokenFile, if non-empty, is read before each git operation to support token rotation.
+// If the remote is empty, a local repo is initialised with the remote configured so that the
+// first CommitAndPush will bootstrap the repository.
 func Clone(ctx context.Context, repoURL, branch, token, tokenFile, dir string, depth int) (*Client, error) {
-	c := &Client{token: token, tokenFile: tokenFile}
+	c := &Client{branch: branch, token: token, tokenFile: tokenFile}
 	opts := &git.CloneOptions{
 		URL:           repoURL,
 		ReferenceName: plumbing.NewBranchReferenceName(branch),
@@ -54,7 +60,19 @@ func Clone(ctx context.Context, repoURL, branch, token, tokenFile, dir string, d
 	}
 	repo, err := git.PlainCloneContext(ctx, dir, false, opts)
 	if err != nil {
-		return nil, fmt.Errorf("git clone: %w", err)
+		if !errors.Is(err, transport.ErrEmptyRemoteRepository) {
+			return nil, fmt.Errorf("git clone: %w", err)
+		}
+		repo, err = git.PlainInit(dir, false)
+		if err != nil {
+			return nil, fmt.Errorf("git init: %w", err)
+		}
+		if _, err = repo.CreateRemote(&gitconfig.RemoteConfig{
+			Name: "origin",
+			URLs: []string{repoURL},
+		}); err != nil {
+			return nil, fmt.Errorf("create remote: %w", err)
+		}
 	}
 	c.repo = repo
 	return c, nil
@@ -75,6 +93,10 @@ func (c *Client) IsClean() (bool, error) {
 
 // Pull fetches and fast-forwards the current branch.
 func (c *Client) Pull() error {
+	// Nothing to pull if the local repo has no commits yet (bootstrapping empty remote).
+	if _, err := c.repo.Head(); errors.Is(err, plumbing.ErrReferenceNotFound) {
+		return nil
+	}
 	wt, err := c.repo.Worktree()
 	if err != nil {
 		return err
@@ -153,7 +175,13 @@ func (c *Client) CommitAndPush(name, email, message string) error {
 		return fmt.Errorf("git commit: %w", err)
 	}
 
-	pushOpts := &git.PushOptions{}
+	pushOpts := &git.PushOptions{
+		// Use an explicit refspec so that pushing to a freshly-initialised local repo
+		// (bootstrapping an empty remote) works without a tracking branch configured.
+		RefSpecs: []gitconfig.RefSpec{
+			gitconfig.RefSpec(fmt.Sprintf("refs/heads/%s:refs/heads/%s", c.branch, c.branch)),
+		},
+	}
 	if tok := c.loadToken(); tok != "" {
 		pushOpts.Auth = &http.BasicAuth{Username: "x-token", Password: tok}
 	}
