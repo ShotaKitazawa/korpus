@@ -4,11 +4,10 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"os/exec"
 	"strings"
-)
 
-const commitMarker = "---KORPUS-COMMIT---"
+	"github.com/go-git/go-git/v5"
+)
 
 // Entry represents a resource's churn statistics over an analyzed window.
 type Entry struct {
@@ -21,25 +20,29 @@ type Entry struct {
 // Returns all resources that appear in at least one commit, along with the
 // total number of commits analyzed.
 func Report(repoPath string, n int, subDir string) ([]Entry, int, error) {
-	out, err := exec.Command("git", "-C", repoPath, "log",
-		fmt.Sprintf("-n%d", n),
-		"--pretty=format:"+commitMarker,
-		"--name-only",
-	).Output()
+	repo, err := git.PlainOpen(repoPath)
+	if err != nil {
+		return nil, 0, fmt.Errorf("open repo: %w", err)
+	}
+	iter, err := repo.Log(&git.LogOptions{Order: git.LogOrderCommitterTime})
 	if err != nil {
 		return nil, 0, fmt.Errorf("git log: %w", err)
 	}
+	defer iter.Close()
 
-	commitBlocks := strings.Split(string(out), commitMarker)
 	var commits [][]string
-	for _, block := range commitBlocks {
+	for len(commits) < n {
+		commit, err := iter.Next()
+		if err != nil {
+			break
+		}
+		stats, err := commit.Stats()
+		if err != nil {
+			continue
+		}
 		var files []string
-		for _, line := range strings.Split(block, "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-			files = append(files, line)
+		for _, s := range stats {
+			files = append(files, s.Name)
 		}
 		if len(files) > 0 {
 			commits = append(commits, files)
