@@ -17,21 +17,23 @@ func (f *fakeDiscovery) ServerPreferredResources() ([]*metav1.APIResourceList, e
 	return f.resources, f.err
 }
 
+var listVerbs = metav1.Verbs{"get", "list", "watch"}
+
 func TestListPreferredResources(t *testing.T) {
 	dc := &fakeDiscovery{
 		resources: []*metav1.APIResourceList{
 			{
 				GroupVersion: "apps/v1",
 				APIResources: []metav1.APIResource{
-					{Name: "deployments", Namespaced: true},
-					{Name: "deployments/scale", Namespaced: true}, // sub-resource — skipped
+					{Name: "deployments", Namespaced: true, Verbs: listVerbs},
+					{Name: "deployments/scale", Namespaced: true, Verbs: listVerbs}, // sub-resource — skipped
 				},
 			},
 			{
 				GroupVersion: "v1",
 				APIResources: []metav1.APIResource{
-					{Name: "pods", Namespaced: true},
-					{Name: "nodes", Namespaced: false},
+					{Name: "pods", Namespaced: true, Verbs: listVerbs},
+					{Name: "nodes", Namespaced: false, Verbs: listVerbs},
 				},
 			},
 		},
@@ -51,14 +53,37 @@ func TestListPreferredResources(t *testing.T) {
 	assert.NotContains(t, names, "deployments/scale")
 }
 
+func TestListPreferredResources_NonListable(t *testing.T) {
+	dc := &fakeDiscovery{
+		resources: []*metav1.APIResourceList{
+			{
+				GroupVersion: "v1",
+				APIResources: []metav1.APIResource{
+					{Name: "pods", Namespaced: true, Verbs: listVerbs},
+					{Name: "bindings", Namespaced: true, Verbs: metav1.Verbs{"create"}},
+					{Name: "tokenreviews", Namespaced: false, Verbs: metav1.Verbs{"create"}},
+				},
+			},
+		},
+	}
+
+	resources, err := ListPreferredResources(dc)
+	require.NoError(t, err)
+	names := make([]string, len(resources))
+	for i, r := range resources {
+		names[i] = r.Resource
+	}
+	assert.Equal(t, []string{"pods"}, names)
+}
+
 func TestListPreferredResources_NamespacedFlag(t *testing.T) {
 	dc := &fakeDiscovery{
 		resources: []*metav1.APIResourceList{
 			{
 				GroupVersion: "v1",
 				APIResources: []metav1.APIResource{
-					{Name: "pods", Namespaced: true},
-					{Name: "nodes", Namespaced: false},
+					{Name: "pods", Namespaced: true, Verbs: listVerbs},
+					{Name: "nodes", Namespaced: false, Verbs: listVerbs},
 				},
 			},
 		},
@@ -82,7 +107,7 @@ func TestListPreferredResources_PartialError(t *testing.T) {
 			{
 				GroupVersion: "v1",
 				APIResources: []metav1.APIResource{
-					{Name: "pods", Namespaced: true},
+					{Name: "pods", Namespaced: true, Verbs: listVerbs},
 				},
 			},
 		},

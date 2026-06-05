@@ -48,6 +48,9 @@ func ListPreferredResources(dc preferredResourcesLister) ([]GVRInfo, error) {
 			if strings.Contains(r.Name, "/") {
 				continue // skip sub-resources
 			}
+			if !hasVerb(r.Verbs, "list") {
+				continue // skip non-listable resources (e.g. bindings, tokenreviews)
+			}
 			result = append(result, GVRInfo{
 				Group:      gv.Group,
 				Version:    gv.Version,
@@ -57,4 +60,13 @@ func ListPreferredResources(dc preferredResourcesLister) ([]GVRInfo, error) {
 		}
 	}
 	return result, nil
+}
+
+func hasVerb(verbs metav1.Verbs, v string) bool {
+	for _, verb := range verbs {
+		if verb == v {
+			return true
+		}
+	}
+	return false
 }
