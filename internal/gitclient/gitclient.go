@@ -67,6 +67,12 @@ func Clone(ctx context.Context, repoURL, branch, token, tokenFile, dir string, d
 		if err != nil {
 			return nil, fmt.Errorf("git init: %w", err)
 		}
+		// Point HEAD at the configured branch so the first commit lands on the right branch.
+		if err = repo.Storer.SetReference(plumbing.NewSymbolicReference(
+			plumbing.HEAD, plumbing.NewBranchReferenceName(branch),
+		)); err != nil {
+			return nil, fmt.Errorf("set HEAD: %w", err)
+		}
 		if _, err = repo.CreateRemote(&gitconfig.RemoteConfig{
 			Name: "origin",
 			URLs: []string{repoURL},

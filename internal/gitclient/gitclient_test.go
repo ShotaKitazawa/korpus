@@ -90,6 +90,24 @@ func TestCommitAndPush(t *testing.T) {
 	assert.True(t, clean)
 }
 
+func TestCommitAndPush_EmptyRemote(t *testing.T) {
+	tmpDir := t.TempDir()
+	bareDir := filepath.Join(tmpDir, "remote.git")
+	require.NoError(t, exec.Command("git", "init", "--bare", "-b", "main", bareDir).Run())
+
+	cloneDir := t.TempDir()
+	client, err := Clone(context.Background(), "file://"+bareDir, "main", "", "", cloneDir, 1)
+	require.NoError(t, err)
+
+	require.NoError(t, os.WriteFile(filepath.Join(cloneDir, "backup.yaml"), []byte("data: 1"), 0o644))
+	require.NoError(t, client.CommitAndPush("bot", "bot@test.com", "initial backup"))
+
+	// Verify the commit reached the bare repo on the expected branch.
+	out, err := exec.Command("git", "-C", bareDir, "log", "--oneline", "main").Output()
+	require.NoError(t, err)
+	assert.Contains(t, string(out), "initial backup")
+}
+
 func setupRepoWithHistory(t *testing.T) (string, *Client) {
 	t.Helper()
 	bareDir := setupBareRepo(t)
