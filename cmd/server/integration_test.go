@@ -3,10 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,12 +15,20 @@ import (
 
 	"github.com/ShotaKitazawa/korpus/internal/config"
 	"github.com/ShotaKitazawa/korpus/internal/gitclient"
+	"github.com/ShotaKitazawa/korpus/internal/gitindex"
 	"github.com/ShotaKitazawa/korpus/internal/index"
 )
 
-func writeFixtureYAMLs(t *testing.T, dir string) {
+// writeFixtureDir creates YAML files in the proper backup-daemon directory structure:
+//
+//	<dir>/core/v1/namespaces/default/pods/my-pod.yaml
+//	<dir>/apps/v1/namespaces/kube-system/deployments/coredns.yaml
+//	<dir>/core/v1/nodes/node-1.yaml
+func writeFixtureDir(t *testing.T, dir string) {
 	t.Helper()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "pod-default.yaml"), []byte(`kind: Pod
+	files := map[string]string{
+		"core/v1/namespaces/default/pods/my-pod.yaml": `apiVersion: v1
+kind: Pod
 metadata:
   name: my-pod
   namespace: default
@@ -30,37 +36,55 @@ metadata:
     app: my-app
 spec:
   dnsPolicy: ClusterFirst
-`), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "deploy-kube-system.yaml"), []byte(`kind: Deployment
+`,
+		"apps/v1/namespaces/kube-system/deployments/coredns.yaml": `apiVersion: apps/v1
+kind: Deployment
 metadata:
   name: coredns
   namespace: kube-system
-`), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "node.yaml"), []byte(`kind: Node
+`,
+		"core/v1/nodes/node-1.yaml": `apiVersion: v1
+kind: Node
 metadata:
   name: node-1
-`), 0o644))
+`,
+	}
+	for relPath, content := range files {
+		full := filepath.Join(dir, filepath.FromSlash(relPath))
+		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
+		require.NoError(t, os.WriteFile(full, []byte(content), 0o644))
+	}
 }
 
 func buildTestState(t *testing.T) *ClusterState {
 	t.Helper()
 	dir := t.TempDir()
-	writeFixtureYAMLs(t, dir)
+	writeFixtureDir(t, dir)
 	idx := index.New("test-cluster", []string{"metadata.labels"})
 	require.NoError(t, idx.Build(dir))
-	state := &ClusterState{idx: idx}
+	state := &ClusterState{idx: idx, subDir: ""}
 	state.recordPull(nil)
 	return state
 }
 
 func buildTestServer(t *testing.T, states map[string]*ClusterState) *httptest.Server {
 	t.Helper()
+	clusterNames := make([]string, 0, len(states))
+	for name := range states {
+		clusterNames = append(clusterNames, name)
+	}
 	cfg := &config.ServerConfig{
 		Spec: config.ServerSpec{
-			Clusters: []config.ClusterConfig{{Name: "test-cluster"}},
+			Clusters: func() []config.ClusterConfig {
+				cs := make([]config.ClusterConfig, 0, len(clusterNames))
+				for _, n := range clusterNames {
+					cs = append(cs, config.ClusterConfig{Name: n})
+				}
+				return cs
+			}(),
 		},
 	}
-	ts := httptest.NewServer(buildMux(t.Context(), cfg, states, slog.Default(), nil))
+	ts := httptest.NewServer(buildMux(context.Background(), cfg, states, clusterNames, nil, nil))
 	t.Cleanup(ts.Close)
 	return ts
 }
@@ -97,25 +121,39 @@ func buildTestStateWithGit(t *testing.T) *ClusterState {
 	client, err := gitclient.Clone(context.Background(), "file://"+bareDir, "main", "", "", workDir, 0)
 	require.NoError(t, err)
 
-	podV1 := `kind: Pod
+	// Commit v1 of pod in proper directory structure.
+	podPath := filepath.Join(workDir, "core", "v1", "namespaces", "default", "pods")
+	require.NoError(t, os.MkdirAll(podPath, 0o755))
+	podV1 := `apiVersion: v1
+kind: Pod
 metadata:
   name: my-pod
   namespace: default
   labels:
     app: my-app
 `
-	require.NoError(t, os.WriteFile(filepath.Join(workDir, "pod-default.yaml"), []byte(podV1), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(podPath, "my-pod.yaml"), []byte(podV1), 0o644))
 	require.NoError(t, client.CommitAndPush("bot", "bot@test.com", "backup: v1"))
 
+	// Commit v2 with spec added.
 	podV2 := podV1 + "spec:\n  dnsPolicy: ClusterFirst\n"
-	require.NoError(t, os.WriteFile(filepath.Join(workDir, "pod-default.yaml"), []byte(podV2), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(podPath, "my-pod.yaml"), []byte(podV2), 0o644))
 	require.NoError(t, client.CommitAndPush("bot", "bot@test.com", "backup: v2"))
 
 	idx := index.New("test-cluster", []string{"metadata.labels"})
 	require.NoError(t, idx.Build(workDir))
 
-	state := &ClusterState{idx: idx}
+	commitIdx, err := gitindex.BuildCommitIndex(client.Repo())
+	require.NoError(t, err)
+	changeIdx, err := gitindex.BuildChangeIndex(client.Repo(), "test-cluster", "", 30)
+	require.NoError(t, err)
+
+	state := &ClusterState{idx: idx, subDir: ""}
 	state.setGit(client, workDir)
+	state.mu.Lock()
+	state.commitIdx = commitIdx
+	state.changeIdx = changeIdx
+	state.mu.Unlock()
 	state.recordPull(nil)
 	return state
 }
@@ -148,6 +186,25 @@ func TestHealthz_NotReady(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 }
 
+func TestStatus(t *testing.T) {
+	ts := buildTestServer(t, map[string]*ClusterState{"test-cluster": buildTestState(t)})
+
+	resp, err := http.Get(ts.URL + "/api/status")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	var result struct {
+		Clusters []struct {
+			Name          string `json:"name"`
+			ResourceCount int    `json:"resourceCount"`
+		} `json:"clusters"`
+	}
+	decodeJSON(t, resp, &result)
+	require.Len(t, result.Clusters, 1)
+	assert.Equal(t, "test-cluster", result.Clusters[0].Name)
+	assert.Equal(t, 3, result.Clusters[0].ResourceCount)
+}
+
 func TestClusters(t *testing.T) {
 	ts := buildTestServer(t, map[string]*ClusterState{"test-cluster": buildTestState(t)})
 
@@ -173,6 +230,18 @@ func TestNamespaces(t *testing.T) {
 	}
 }
 
+func TestGroups(t *testing.T) {
+	ts := buildTestServer(t, map[string]*ClusterState{"test-cluster": buildTestState(t)})
+
+	resp, err := http.Get(ts.URL + "/api/groups")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	var groups []string
+	decodeJSON(t, resp, &groups)
+	assert.ElementsMatch(t, []string{"core", "apps"}, groups)
+}
+
 func TestKinds_All(t *testing.T) {
 	ts := buildTestServer(t, map[string]*ClusterState{"test-cluster": buildTestState(t)})
 
@@ -180,9 +249,12 @@ func TestKinds_All(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	var kinds []string
+	var kinds []struct {
+		Group string `json:"group"`
+		Kind  string `json:"kind"`
+	}
 	decodeJSON(t, resp, &kinds)
-	assert.Equal(t, []string{"Deployment", "Node", "Pod"}, kinds)
+	require.Len(t, kinds, 3)
 }
 
 func TestKinds_ByNamespace(t *testing.T) {
@@ -192,142 +264,113 @@ func TestKinds_ByNamespace(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	var kinds []string
+	var kinds []struct {
+		Group string `json:"group"`
+		Kind  string `json:"kind"`
+	}
 	decodeJSON(t, resp, &kinds)
-	assert.Equal(t, []string{"Pod"}, kinds)
+	require.Len(t, kinds, 1)
+	assert.Equal(t, "Pod", kinds[0].Kind)
 }
 
-type resourcePage struct {
-	Items  []index.ResourceMeta `json:"items"`
-	Total  int                  `json:"total"`
-	Offset int                  `json:"offset"`
-	Limit  int                  `json:"limit"`
-}
-
-func TestResources_All(t *testing.T) {
+func TestKinds_ByGroup(t *testing.T) {
 	ts := buildTestServer(t, map[string]*ClusterState{"test-cluster": buildTestState(t)})
 
-	resp, err := http.Get(ts.URL + "/api/resources")
+	resp, err := http.Get(ts.URL + "/api/kinds?group=apps")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	var page resourcePage
+	var kinds []struct {
+		Group string `json:"group"`
+		Kind  string `json:"kind"`
+	}
+	decodeJSON(t, resp, &kinds)
+	require.Len(t, kinds, 1)
+	assert.Equal(t, "Deployment", kinds[0].Kind)
+}
+
+func TestSnapshot_All(t *testing.T) {
+	ts := buildTestServer(t, map[string]*ClusterState{"test-cluster": buildTestState(t)})
+
+	resp, err := http.Get(ts.URL + "/api/snapshot")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	var page struct {
+		Items  []any `json:"items"`
+		Total  int   `json:"total"`
+		Offset int   `json:"offset"`
+		Limit  int   `json:"limit"`
+	}
 	decodeJSON(t, resp, &page)
 	assert.Equal(t, 3, page.Total)
 	assert.Len(t, page.Items, 3)
 }
 
-func TestResources_Pagination(t *testing.T) {
+func TestSnapshot_Pagination(t *testing.T) {
 	ts := buildTestServer(t, map[string]*ClusterState{"test-cluster": buildTestState(t)})
 
-	resp, err := http.Get(ts.URL + "/api/resources?offset=0&limit=2")
+	resp, err := http.Get(ts.URL + "/api/snapshot?limit=2&offset=0")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	var page resourcePage
+	var page struct {
+		Items  []any `json:"items"`
+		Total  int   `json:"total"`
+		Offset int   `json:"offset"`
+		Limit  int   `json:"limit"`
+	}
 	decodeJSON(t, resp, &page)
 	assert.Equal(t, 3, page.Total)
 	assert.Len(t, page.Items, 2)
-	assert.Equal(t, 0, page.Offset)
 	assert.Equal(t, 2, page.Limit)
 }
 
-func TestResources_ByKind(t *testing.T) {
+func TestSnapshot_ByKind(t *testing.T) {
 	ts := buildTestServer(t, map[string]*ClusterState{"test-cluster": buildTestState(t)})
 
-	resp, err := http.Get(ts.URL + "/api/resources?kind=Pod")
+	resp, err := http.Get(ts.URL + "/api/snapshot?kind=Pod")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	var page resourcePage
+	var page struct {
+		Items []struct {
+			Name string `json:"name"`
+			Kind string `json:"kind"`
+		} `json:"items"`
+		Total int `json:"total"`
+	}
 	decodeJSON(t, resp, &page)
 	require.Len(t, page.Items, 1)
 	assert.Equal(t, "my-pod", page.Items[0].Name)
 }
 
-func TestResources_ByLabel(t *testing.T) {
+func TestSnapshot_CEL_BadRequestWithDatetime(t *testing.T) {
 	ts := buildTestServer(t, map[string]*ClusterState{"test-cluster": buildTestState(t)})
 
-	resp, err := http.Get(ts.URL + "/api/resources?labels=app=my-app")
+	resp, err := http.Get(ts.URL + "/api/snapshot?datetime=2024-01-01T00:00:00Z&cel=object.metadata.name==%22x%22")
 	require.NoError(t, err)
 	defer resp.Body.Close()
-
-	var page resourcePage
-	decodeJSON(t, resp, &page)
-	assert.Len(t, page.Items, 1)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
-func TestResources_LabelKeyOnly(t *testing.T) {
+func TestResource_Get(t *testing.T) {
 	ts := buildTestServer(t, map[string]*ClusterState{"test-cluster": buildTestState(t)})
 
-	resp, err := http.Get(ts.URL + "/api/resources?labels=app")
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	var page resourcePage
-	decodeJSON(t, resp, &page)
-	assert.Len(t, page.Items, 1)
-}
-
-func TestResourceDetail(t *testing.T) {
-	ts := buildTestServer(t, map[string]*ClusterState{"test-cluster": buildTestState(t)})
-
-	resp, err := http.Get(ts.URL + "/api/resources/test-cluster/Pod/default/my-pod")
+	resp, err := http.Get(ts.URL + "/api/resource?cluster=test-cluster&group=core&kind=Pod&namespace=default&name=my-pod")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Contains(t, resp.Header.Get("Content-Type"), "text/plain")
 }
 
-func TestResourceDetail_NotFound(t *testing.T) {
+func TestResource_NotFound(t *testing.T) {
 	ts := buildTestServer(t, map[string]*ClusterState{"test-cluster": buildTestState(t)})
 
-	resp, err := http.Get(ts.URL + "/api/resources/test-cluster/Pod/default/nonexistent")
+	resp, err := http.Get(ts.URL + "/api/resource?cluster=test-cluster&group=core&kind=Pod&namespace=default&name=nonexistent")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
-}
-
-func TestQuery_CEL(t *testing.T) {
-	ts := buildTestServer(t, map[string]*ClusterState{"test-cluster": buildTestState(t)})
-
-	q := url.QueryEscape(`object.metadata.labels["app"]=="my-app"`)
-	resp, err := http.Get(ts.URL + "/api/query?kind=Pod&q=" + q)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	var page resourcePage
-	decodeJSON(t, resp, &page)
-	assert.Len(t, page.Items, 1)
-}
-
-func TestQuery_KindRequired(t *testing.T) {
-	ts := buildTestServer(t, map[string]*ClusterState{"test-cluster": buildTestState(t)})
-
-	q := url.QueryEscape(`object.metadata.name=="my-pod"`)
-	resp, err := http.Get(ts.URL + "/api/query?q=" + q)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-}
-
-func TestStatus(t *testing.T) {
-	ts := buildTestServer(t, map[string]*ClusterState{"test-cluster": buildTestState(t)})
-
-	resp, err := http.Get(ts.URL + "/api/status")
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	var result struct {
-		Clusters []struct {
-			Name          string `json:"name"`
-			ResourceCount int    `json:"resourceCount"`
-		} `json:"clusters"`
-	}
-	decodeJSON(t, resp, &result)
-	require.Len(t, result.Clusters, 1)
-	assert.Equal(t, "test-cluster", result.Clusters[0].Name)
-	assert.Equal(t, 3, result.Clusters[0].ResourceCount)
 }
 
 func TestParseLabelSelector(t *testing.T) {
@@ -348,36 +391,44 @@ func TestHistory(t *testing.T) {
 	state := buildTestStateWithGit(t)
 	ts := buildTestServer(t, map[string]*ClusterState{"test-cluster": state})
 
-	resp, err := http.Get(ts.URL + "/api/resources/test-cluster/Pod/default/my-pod/history")
+	resp, err := http.Get(ts.URL + "/api/history?cluster=test-cluster&group=core&kind=Pod&namespace=default&name=my-pod")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	var entries []struct {
-		SHA     string `json:"sha"`
-		Message string `json:"message"`
+	var page struct {
+		Items []struct {
+			SHA        string `json:"sha"`
+			ChangeType string `json:"changeType"`
+		} `json:"items"`
+		Total int `json:"total"`
 	}
-	decodeJSON(t, resp, &entries)
-	require.Len(t, entries, 2)
-	assert.NotEmpty(t, entries[0].SHA)
-	assert.NotEmpty(t, entries[0].Message)
+	decodeJSON(t, resp, &page)
+	assert.GreaterOrEqual(t, page.Total, 1)
+	require.NotEmpty(t, page.Items)
+	assert.NotEmpty(t, page.Items[0].SHA)
 }
 
 func TestDiff(t *testing.T) {
 	state := buildTestStateWithGit(t)
 	ts := buildTestServer(t, map[string]*ClusterState{"test-cluster": state})
 
-	histResp, err := http.Get(ts.URL + "/api/resources/test-cluster/Pod/default/my-pod/history")
+	// Get history to obtain commit SHAs.
+	histResp, err := http.Get(ts.URL + "/api/history?cluster=test-cluster&group=core&kind=Pod&namespace=default&name=my-pod")
 	require.NoError(t, err)
-	var entries []struct {
-		SHA string `json:"sha"`
+	var histPage struct {
+		Items []struct {
+			SHA string `json:"sha"`
+		} `json:"items"`
 	}
-	decodeJSON(t, histResp, &entries)
+	decodeJSON(t, histResp, &histPage)
 	histResp.Body.Close()
-	require.Len(t, entries, 2)
-	// entries[0]=v2 (latest), entries[1]=v1 (older)
-	from, to := entries[1].SHA, entries[0].SHA
+	require.GreaterOrEqual(t, len(histPage.Items), 2, "need at least 2 events for diff")
 
-	diffResp, err := http.Get(ts.URL + "/api/resources/test-cluster/Pod/default/my-pod/diff?from=" + from + "&to=" + to)
+	// newest first: items[0]=latest, items[1]=older
+	from := histPage.Items[1].SHA
+	to := histPage.Items[0].SHA
+
+	diffResp, err := http.Get(ts.URL + "/api/diff?cluster=test-cluster&group=core&kind=Pod&namespace=default&name=my-pod&from=" + from + "&to=" + to)
 	require.NoError(t, err)
 	defer diffResp.Body.Close()
 

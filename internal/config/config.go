@@ -93,7 +93,8 @@ type ResourceConfig struct {
 }
 
 type IndexConfig struct {
-	Fields []string `yaml:"fields"`
+	Fields      []string `yaml:"fields"`
+	HistoryDays int      `yaml:"historyDays"`
 }
 
 var envVarRe = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
@@ -192,6 +193,9 @@ func LoadServer(path string) (*ServerConfig, error) {
 	}
 	if len(cfg.Spec.Index.Fields) == 0 {
 		cfg.Spec.Index.Fields = []string{"metadata.labels", "metadata.creationTimestamp"}
+	}
+	if cfg.Spec.Index.HistoryDays == 0 {
+		cfg.Spec.Index.HistoryDays = 30
 	}
 	if o := cfg.Spec.OIDC; o != nil {
 		if o.Issuer == "" {

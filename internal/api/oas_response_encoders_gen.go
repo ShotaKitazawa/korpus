@@ -12,17 +12,45 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-func encodeGetChurnResponse(response []ChurnEntry, w http.ResponseWriter, span trace.Span) error {
+func encodeGetDiffResponse(response GetDiffRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *DiffResult:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *GetDiffBadRequest:
+		w.WriteHeader(400)
+		span.SetStatus(codes.Error, http.StatusText(400))
+
+		return nil
+
+	case *GetDiffNotFound:
+		w.WriteHeader(404)
+		span.SetStatus(codes.Error, http.StatusText(404))
+
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
+
+func encodeGetHistoryResponse(response *HistoryPage, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
 	span.SetStatus(codes.Ok, http.StatusText(200))
 
 	e := new(jx.Encoder)
-	e.ArrStart()
-	for _, elem := range response {
-		elem.Encode(e)
-	}
-	e.ArrEnd()
+	response.Encode(e)
 	if _, err := e.WriteTo(w); err != nil {
 		return errors.Wrap(err, "write")
 	}
@@ -58,9 +86,9 @@ func encodeGetResourceResponse(response GetResourceRes, w http.ResponseWriter, s
 	}
 }
 
-func encodeGetResourceDiffResponse(response GetResourceDiffRes, w http.ResponseWriter, span trace.Span) error {
+func encodeGetSnapshotResponse(response GetSnapshotRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *DiffResult:
+	case *SnapshotPage:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(200)
 		span.SetStatus(codes.Ok, http.StatusText(200))
@@ -73,41 +101,9 @@ func encodeGetResourceDiffResponse(response GetResourceDiffRes, w http.ResponseW
 
 		return nil
 
-	case *GetResourceDiffBadRequest:
+	case *GetSnapshotBadRequest:
 		w.WriteHeader(400)
 		span.SetStatus(codes.Error, http.StatusText(400))
-
-		return nil
-
-	case *GetResourceDiffNotFound:
-		w.WriteHeader(404)
-		span.SetStatus(codes.Error, http.StatusText(404))
-
-		return nil
-
-	default:
-		return errors.Errorf("unexpected response type: %T", response)
-	}
-}
-
-func encodeGetResourceHistoryResponse(response GetResourceHistoryRes, w http.ResponseWriter, span trace.Span) error {
-	switch response := response.(type) {
-	case *GetResourceHistoryOKApplicationJSON:
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(200)
-		span.SetStatus(codes.Ok, http.StatusText(200))
-
-		e := new(jx.Encoder)
-		response.Encode(e)
-		if _, err := e.WriteTo(w); err != nil {
-			return errors.Wrap(err, "write")
-		}
-
-		return nil
-
-	case *GetResourceHistoryNotFound:
-		w.WriteHeader(404)
-		span.SetStatus(codes.Error, http.StatusText(404))
 
 		return nil
 
@@ -128,6 +124,46 @@ func encodeGetStatusResponse(response *StatusResponse, w http.ResponseWriter, sp
 	}
 
 	return nil
+}
+
+func encodeGetVolatilityResponse(response *VolatilityPage, w http.ResponseWriter, span trace.Span) error {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(200)
+	span.SetStatus(codes.Ok, http.StatusText(200))
+
+	e := new(jx.Encoder)
+	response.Encode(e)
+	if _, err := e.WriteTo(w); err != nil {
+		return errors.Wrap(err, "write")
+	}
+
+	return nil
+}
+
+func encodeGetVolatilityFieldsResponse(response GetVolatilityFieldsRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *GetVolatilityFieldsOKApplicationJSON:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *GetVolatilityFieldsBadRequest:
+		w.WriteHeader(400)
+		span.SetStatus(codes.Error, http.StatusText(400))
+
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
 }
 
 func encodeHealthzResponse(response HealthzRes, w http.ResponseWriter, span trace.Span) error {
@@ -167,7 +203,7 @@ func encodeListClustersResponse(response []string, w http.ResponseWriter, span t
 	return nil
 }
 
-func encodeListKindsResponse(response []string, w http.ResponseWriter, span trace.Span) error {
+func encodeListGroupsResponse(response []string, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
 	span.SetStatus(codes.Ok, http.StatusText(200))
@@ -176,6 +212,24 @@ func encodeListKindsResponse(response []string, w http.ResponseWriter, span trac
 	e.ArrStart()
 	for _, elem := range response {
 		e.Str(elem)
+	}
+	e.ArrEnd()
+	if _, err := e.WriteTo(w); err != nil {
+		return errors.Wrap(err, "write")
+	}
+
+	return nil
+}
+
+func encodeListKindsResponse(response []KindInfo, w http.ResponseWriter, span trace.Span) error {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(200)
+	span.SetStatus(codes.Ok, http.StatusText(200))
+
+	e := new(jx.Encoder)
+	e.ArrStart()
+	for _, elem := range response {
+		elem.Encode(e)
 	}
 	e.ArrEnd()
 	if _, err := e.WriteTo(w); err != nil {
@@ -201,44 +255,4 @@ func encodeListNamespacesResponse(response []string, w http.ResponseWriter, span
 	}
 
 	return nil
-}
-
-func encodeListResourcesResponse(response *ResourceListPage, w http.ResponseWriter, span trace.Span) error {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(200)
-	span.SetStatus(codes.Ok, http.StatusText(200))
-
-	e := new(jx.Encoder)
-	response.Encode(e)
-	if _, err := e.WriteTo(w); err != nil {
-		return errors.Wrap(err, "write")
-	}
-
-	return nil
-}
-
-func encodeQueryResourcesResponse(response QueryResourcesRes, w http.ResponseWriter, span trace.Span) error {
-	switch response := response.(type) {
-	case *ResourceListPage:
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(200)
-		span.SetStatus(codes.Ok, http.StatusText(200))
-
-		e := new(jx.Encoder)
-		response.Encode(e)
-		if _, err := e.WriteTo(w); err != nil {
-			return errors.Wrap(err, "write")
-		}
-
-		return nil
-
-	case *QueryResourcesBadRequest:
-		w.WriteHeader(400)
-		span.SetStatus(codes.Error, http.StatusText(400))
-
-		return nil
-
-	default:
-		return errors.Errorf("unexpected response type: %T", response)
-	}
 }

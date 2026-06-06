@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { api, type ResourceMeta } from "./api.ts"
+import { api, type SnapshotResource, type KindInfo } from "./api.ts"
 import ChurnView from "./components/ChurnView.tsx"
 import ClusterList from "./components/ClusterList.tsx"
 import KindSelect from "./components/KindSelect.tsx"
@@ -9,7 +9,7 @@ import ResourceDetail from "./components/ResourceDetail.tsx"
 import ResourceList from "./components/ResourceList.tsx"
 import SearchBar from "./components/SearchBar.tsx"
 
-export type { ResourceMeta }
+export type { SnapshotResource }
 
 const DEFAULT_LIMIT = 50
 
@@ -30,7 +30,7 @@ function syncUrl(state: {
   labels: string
   q: string
   offset: number
-  selected: ResourceMeta | null
+  selected: SnapshotResource | null
   view: string
 }) {
   const params = new URLSearchParams()
@@ -43,6 +43,7 @@ function syncUrl(state: {
   if (state.view && state.view !== "resources") params.set("view", state.view)
   if (state.selected) {
     params.set("selCluster", state.selected.cluster)
+    params.set("selGroup", state.selected.group)
     params.set("selKind", state.selected.kind)
     params.set("selNamespace", state.selected.namespace)
     params.set("selName", state.selected.name)
@@ -62,13 +63,13 @@ export default function App() {
   const [selectedNamespace, setSelectedNamespace] = useState(() =>
     readParam("namespace"),
   )
-  const [kinds, setKinds] = useState<string[]>([])
+  const [kinds, setKinds] = useState<KindInfo[]>([])
   const [selectedKind, setSelectedKind] = useState(() => readParam("kind"))
   const [labelFilter, setLabelFilter] = useState(() => readParam("labels"))
-  const [resources, setResources] = useState<ResourceMeta[]>([])
+  const [resources, setResources] = useState<SnapshotResource[]>([])
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(() => readIntParam("offset", 0))
-  const [selected, setSelected] = useState<ResourceMeta | null>(null)
+  const [selected, setSelected] = useState<SnapshotResource | null>(null)
   const [detail, setDetail] = useState("")
   const [searchQuery, setSearchQuery] = useState(() => readParam("q"))
   const [view, setView] = useState<"resources" | "churn">(() =>
@@ -77,6 +78,7 @@ export default function App() {
 
   const pendingSelect = useRef({
     cluster: readParam("selCluster"),
+    group: readParam("selGroup"),
     kind: readParam("selKind"),
     namespace: readParam("selNamespace"),
     name: readParam("selName"),
@@ -119,39 +121,37 @@ export default function App() {
     const fetchPage = () => {
       if (selectedKind && searchQuery) {
         return api
-          .GET("/api/query", {
+          .GET("/api/snapshot", {
             params: {
               query: {
-                kind: selectedKind,
+                kind: selectedKind || undefined,
                 cluster: selectedCluster || undefined,
                 namespace: selectedNamespace || undefined,
-                labels: labelFilter || undefined,
-                q: searchQuery,
+                cel: searchQuery || undefined,
                 offset,
                 limit: DEFAULT_LIMIT,
               },
             },
           })
           .then(({ data }) => ({
-            items: data?.items ?? [],
+            items: (data?.items ?? []) as SnapshotResource[],
             total: data?.total ?? 0,
           }))
       }
       return api
-        .GET("/api/resources", {
+        .GET("/api/snapshot", {
           params: {
             query: {
               cluster: selectedCluster || undefined,
               kind: selectedKind || undefined,
               namespace: selectedNamespace || undefined,
-              labels: labelFilter || undefined,
               offset,
               limit: DEFAULT_LIMIT,
             },
           },
         })
         .then(({ data }) => ({
-          items: data?.items ?? [],
+          items: (data?.items ?? []) as SnapshotResource[],
           total: data?.total ?? 0,
         }))
     }
@@ -173,6 +173,7 @@ export default function App() {
           setSelected(match)
           pendingSelect.current = {
             cluster: "",
+            group: "",
             kind: "",
             namespace: "",
             name: "",
@@ -199,12 +200,13 @@ export default function App() {
       return
     }
     api
-      .GET("/api/resources/{cluster}/{kind}/{namespace}/{name}", {
+      .GET("/api/resource", {
         params: {
-          path: {
+          query: {
             cluster: selected.cluster,
+            group: selected.group,
             kind: selected.kind,
-            namespace: selected.namespace,
+            namespace: selected.namespace || undefined,
             name: selected.name,
           },
         },
@@ -332,7 +334,7 @@ export default function App() {
               marginLeft: "auto",
             }}
           >
-            Churn
+            Volatility
           </button>
         </div>
 

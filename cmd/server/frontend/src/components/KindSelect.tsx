@@ -1,5 +1,7 @@
+import type { KindInfo } from "../api.ts"
+
 interface Props {
-  kinds: string[]
+  kinds: KindInfo[]
   value: string
   onChange: (kind: string) => void
 }
@@ -16,7 +18,7 @@ export default function KindSelect({ kinds, value, onChange }: Props) {
       />
       <datalist id="kinds-list">
         {kinds.map((k) => (
-          <option key={k} value={k} />
+          <option key={`${k.group}/${k.kind}`} value={k.kind} />
         ))}
       </datalist>
     </>

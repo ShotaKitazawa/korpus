@@ -22,9 +22,9 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	api "github.com/ShotaKitazawa/korpus/internal/api"
-	"github.com/ShotaKitazawa/korpus/internal/churn"
 	"github.com/ShotaKitazawa/korpus/internal/config"
 	"github.com/ShotaKitazawa/korpus/internal/gitclient"
+	"github.com/ShotaKitazawa/korpus/internal/gitindex"
 	"github.com/ShotaKitazawa/korpus/internal/index"
 	oidcmw "github.com/ShotaKitazawa/korpus/internal/oidc"
 )
@@ -32,7 +32,7 @@ import (
 //go:embed all:frontend/dist
 var frontendDist embed.FS
 
-// ClusterState bundles the in-memory index, the git client, and pull status for one cluster.
+// ClusterState bundles the in-memory index, git indexes, and pull status for one cluster.
 type ClusterState struct {
 	idx    *index.Index
 	subDir string
@@ -40,6 +40,8 @@ type ClusterState struct {
 	mu            sync.RWMutex
 	gc            *gitclient.Client
 	workDir       string
+	commitIdx     *gitindex.CommitIndex
+	changeIdx     *gitindex.ChangeIndex
 	lastPullAt    *time.Time
 	lastPullErr   string
 	resourceCount int
@@ -52,6 +54,33 @@ func (s *ClusterState) setGit(gc *gitclient.Client, workDir string) {
 	s.workDir = workDir
 }
 
+func (s *ClusterState) rebuildIndexes(dir, clusterName string, historyDays int) error {
+	if err := s.idx.Build(dir); err != nil {
+		return err
+	}
+	s.mu.RLock()
+	gc := s.gc
+	subDir := s.subDir
+	s.mu.RUnlock()
+	if gc == nil {
+		return fmt.Errorf("git client not ready")
+	}
+	repo := gc.Repo()
+	commitIdx, err := gitindex.BuildCommitIndex(repo)
+	if err != nil {
+		return fmt.Errorf("build commit index: %w", err)
+	}
+	changeIdx, err := gitindex.BuildChangeIndex(repo, clusterName, subDir, historyDays)
+	if err != nil {
+		return fmt.Errorf("build change index: %w", err)
+	}
+	s.mu.Lock()
+	s.commitIdx = commitIdx
+	s.changeIdx = changeIdx
+	s.mu.Unlock()
+	return nil
+}
+
 func (s *ClusterState) recordPull(err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -61,7 +90,7 @@ func (s *ClusterState) recordPull(err error) {
 		s.lastPullErr = err.Error()
 	} else {
 		s.lastPullErr = ""
-		s.resourceCount = len(s.idx.List("", "", nil))
+		s.resourceCount = len(s.idx.List("", "", "", nil))
 	}
 }
 
@@ -85,13 +114,6 @@ func (s *ClusterState) ready() bool {
 	return s.lastPullAt != nil && s.lastPullErr == ""
 }
 
-type clusterStatus struct {
-	Name          string     `json:"name"`
-	LastPullAt    *time.Time `json:"lastPullAt"`
-	LastPullErr   string     `json:"lastPullErr"`
-	ResourceCount int        `json:"resourceCount"`
-}
-
 // relPath converts an absolute file path into a repo-relative path using forward slashes.
 func (s *ClusterState) relPath(absPath string) string {
 	s.mu.RLock()
@@ -101,16 +123,6 @@ func (s *ClusterState) relPath(absPath string) string {
 		return ""
 	}
 	return filepath.ToSlash(rel)
-}
-
-func (s *ClusterState) history(relPath string, n int) ([]gitclient.HistoryEntry, error) {
-	s.mu.RLock()
-	gc := s.gc
-	s.mu.RUnlock()
-	if gc == nil {
-		return nil, fmt.Errorf("cluster not ready")
-	}
-	return gc.FileHistory(relPath, n)
 }
 
 func (s *ClusterState) fileAt(relPath, sha string) (string, error) {
@@ -123,15 +135,11 @@ func (s *ClusterState) fileAt(relPath, sha string) (string, error) {
 	return gc.FileAtCommit(relPath, sha)
 }
 
-func (s *ClusterState) churnReport(n int) ([]churn.Entry, int, error) {
-	s.mu.RLock()
-	workDir := s.workDir
-	subDir := s.subDir
-	s.mu.RUnlock()
-	if workDir == "" {
-		return nil, 0, fmt.Errorf("cluster not ready")
-	}
-	return churn.Report(workDir, n, subDir)
+type clusterStatus struct {
+	Name          string     `json:"name"`
+	LastPullAt    *time.Time `json:"lastPullAt"`
+	LastPullErr   string     `json:"lastPullErr"`
+	ResourceCount int        `json:"resourceCount"`
 }
 
 func main() {
@@ -146,6 +154,11 @@ func main() {
 	if err != nil {
 		logger.Error("load config", "err", err)
 		os.Exit(1)
+	}
+
+	clusterNames := make([]string, 0, len(cfg.Spec.Clusters))
+	for _, c := range cfg.Spec.Clusters {
+		clusterNames = append(clusterNames, c.Name)
 	}
 
 	states := make(map[string]*ClusterState, len(cfg.Spec.Clusters))
@@ -176,7 +189,7 @@ func main() {
 			state.setGit(gc, workDir)
 
 			indexDir := filepath.Join(workDir, c.Git.SubDir)
-			if buildErr := state.idx.Build(indexDir); buildErr != nil {
+			if buildErr := state.rebuildIndexes(indexDir, c.Name, cfg.Spec.Index.HistoryDays); buildErr != nil {
 				logger.Warn("index build", "cluster", c.Name, "err", buildErr)
 				state.recordPull(buildErr)
 			} else {
@@ -210,7 +223,7 @@ func main() {
 						state.setGit(gc, workDir)
 					}
 					indexDir = filepath.Join(workDir, c.Git.SubDir)
-					if buildErr := state.idx.Build(indexDir); buildErr != nil {
+					if buildErr := state.rebuildIndexes(indexDir, c.Name, cfg.Spec.Index.HistoryDays); buildErr != nil {
 						logger.Warn("index rebuild", "cluster", c.Name, "err", buildErr)
 						state.recordPull(buildErr)
 					} else {
@@ -230,7 +243,7 @@ func main() {
 		}
 	}
 
-	mux := buildMux(ctx, cfg, states, logger, oidcMiddleware)
+	mux := buildMux(ctx, cfg, states, clusterNames, logger, oidcMiddleware)
 	srv := &http.Server{Addr: cfg.Spec.Addr, Handler: mux}
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -245,21 +258,6 @@ func main() {
 	srv.Shutdown(context.Background()) //nolint:errcheck
 }
 
-// resolveStates returns the states to query. If cluster is empty, all states are returned.
-func resolveStates(cluster string, states map[string]*ClusterState) []*ClusterState {
-	if cluster == "" {
-		result := make([]*ClusterState, 0, len(states))
-		for _, st := range states {
-			result = append(result, st)
-		}
-		return result
-	}
-	if st, ok := states[cluster]; ok {
-		return []*ClusterState{st}
-	}
-	return nil
-}
-
 func maybeProtect(mw *oidcmw.Middleware, h http.Handler) http.Handler {
 	if mw != nil {
 		return mw.Handler(h)
@@ -267,33 +265,28 @@ func maybeProtect(mw *oidcmw.Middleware, h http.Handler) http.Handler {
 	return h
 }
 
-func buildMux(ctx context.Context, cfg *config.ServerConfig, states map[string]*ClusterState, logger *slog.Logger, oidcMW *oidcmw.Middleware) http.Handler {
+func buildMux(ctx context.Context, cfg *config.ServerConfig, states map[string]*ClusterState, clusterNames []string, logger *slog.Logger, oidcMW *oidcmw.Middleware) http.Handler {
+	_ = ctx
 	mux := http.NewServeMux()
 
-	clusterNames := make([]string, 0, len(cfg.Spec.Clusters))
-	for _, c := range cfg.Spec.Clusters {
-		clusterNames = append(clusterNames, c.Name)
-	}
-
 	ogenSrv, err := api.NewServer(&apiHandler{
-		cfg:          cfg,
 		states:       states,
 		clusterNames: clusterNames,
-		logger:       logger,
 	})
 	if err != nil {
 		panic(fmt.Sprintf("create api server: %v", err))
 	}
-	// Always-public routes
+
+	// Always-public routes.
 	mux.Handle("/healthz", ogenSrv)
 	mux.HandleFunc("/.well-known/oauth-protected-resource", oauthProtectedResourceHandler(cfg))
 	mux.HandleFunc("/auth-config", authConfigHandler(cfg))
 
-	// Protected routes (JWT middleware when OIDC is configured)
+	// Protected routes (JWT middleware when OIDC is configured).
 	mux.Handle("/api/", maybeProtect(oidcMW, ogenSrv))
 	mux.Handle("/mcp", maybeProtect(oidcMW, buildMCPServer(states, clusterNames)))
 
-	// Frontend (SPA)
+	// Frontend SPA.
 	distFS, err := fs.Sub(frontendDist, "frontend/dist")
 	if err != nil {
 		logger.Error("frontend embed", "err", err)
@@ -317,43 +310,83 @@ func buildMux(ctx context.Context, cfg *config.ServerConfig, states map[string]*
 }
 
 func buildMCPServer(states map[string]*ClusterState, clusterNames []string) http.Handler {
-	s := mcpserver.NewMCPServer("korpus", "1.0.0")
+	s := mcpserver.NewMCPServer("korpus", "2.0.0")
+
+	resolveStates := func(cluster string) []*ClusterState {
+		if cluster != "" {
+			if st, ok := states[cluster]; ok {
+				return []*ClusterState{st}
+			}
+			return nil
+		}
+		out := make([]*ClusterState, 0, len(clusterNames))
+		for _, name := range clusterNames {
+			out = append(out, states[name])
+		}
+		return out
+	}
 
 	s.AddTool(mcp.NewTool("list_clusters",
-		mcp.WithDescription("List all cluster names"),
+		mcp.WithDescription("List all available cluster names"),
 	), func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return mcp.NewToolResultText(mustJSON(clusterNames)), nil
 	})
 
-	s.AddTool(mcp.NewTool("list_kinds",
-		mcp.WithDescription("List all resource kinds, optionally filtered by cluster and/or namespace"),
-		mcp.WithString("cluster", mcp.Description("Cluster name (optional, omit for all clusters)")),
-		mcp.WithString("namespace", mcp.Description("Namespace to filter by (optional)")),
+	s.AddTool(mcp.NewTool("list_groups",
+		mcp.WithDescription("List API groups, optionally filtered by cluster"),
+		mcp.WithString("cluster", mcp.Description("Cluster name (optional)")),
 	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		cluster, _ := args["cluster"].(string)
-		ns, _ := args["namespace"].(string)
 		seen := make(map[string]struct{})
-		for _, st := range resolveStates(cluster, states) {
-			for _, k := range st.idx.Kinds(ns) {
-				seen[k] = struct{}{}
+		for _, st := range resolveStates(cluster) {
+			for _, g := range st.idx.Groups() {
+				seen[g] = struct{}{}
 			}
 		}
 		result := make([]string, 0, len(seen))
-		for k := range seen {
-			result = append(result, k)
+		for g := range seen {
+			result = append(result, g)
+		}
+		return mcp.NewToolResultText(mustJSON(result)), nil
+	})
+
+	s.AddTool(mcp.NewTool("list_kinds",
+		mcp.WithDescription("List resource kinds, optionally filtered by cluster, group, or namespace"),
+		mcp.WithString("cluster", mcp.Description("Cluster name (optional)")),
+		mcp.WithString("group", mcp.Description("API group filter (optional)")),
+		mcp.WithString("namespace", mcp.Description("Namespace filter (optional)")),
+	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		cluster, _ := args["cluster"].(string)
+		group, _ := args["group"].(string)
+		ns, _ := args["namespace"].(string)
+		type kindInfo struct {
+			Group string `json:"group"`
+			Kind  string `json:"kind"`
+		}
+		seen := make(map[string]struct{})
+		var result []kindInfo
+		for _, st := range resolveStates(cluster) {
+			for _, ki := range st.idx.Kinds(ns, group) {
+				key := ki.Group + "/" + ki.Kind
+				if _, ok := seen[key]; !ok {
+					seen[key] = struct{}{}
+					result = append(result, kindInfo{Group: ki.Group, Kind: ki.Kind})
+				}
+			}
 		}
 		return mcp.NewToolResultText(mustJSON(result)), nil
 	})
 
 	s.AddTool(mcp.NewTool("list_namespaces",
-		mcp.WithDescription("List all namespaces, optionally filtered by cluster"),
-		mcp.WithString("cluster", mcp.Description("Cluster name (optional, omit for all clusters)")),
+		mcp.WithDescription("List namespaces, optionally filtered by cluster"),
+		mcp.WithString("cluster", mcp.Description("Cluster name (optional)")),
 	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		cluster, _ := args["cluster"].(string)
 		seen := make(map[string]struct{})
-		for _, st := range resolveStates(cluster, states) {
+		for _, st := range resolveStates(cluster) {
 			for _, ns := range st.idx.Namespaces() {
 				seen[ns] = struct{}{}
 			}
@@ -365,42 +398,25 @@ func buildMCPServer(states map[string]*ClusterState, clusterNames []string) http
 		return mcp.NewToolResultText(mustJSON(result)), nil
 	})
 
-	s.AddTool(mcp.NewTool("list_resources",
-		mcp.WithDescription("List K8s resources, optionally filtered by cluster, kind, namespace and/or labels"),
-		mcp.WithString("cluster", mcp.Description("Cluster name (optional, omit for all clusters)")),
-		mcp.WithString("kind", mcp.Description("Resource kind (e.g. Pod, Deployment)")),
-		mcp.WithString("namespace", mcp.Description("Namespace to filter by")),
-		mcp.WithString("labels", mcp.Description("Label selector, comma-separated key=value pairs (e.g. app=nginx,env=prod)")),
-	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		args := req.GetArguments()
-		cluster, _ := args["cluster"].(string)
-		kind, _ := args["kind"].(string)
-		ns, _ := args["namespace"].(string)
-		labelSel := parseLabelSelector(func() string { s, _ := args["labels"].(string); return s }())
-		var result []index.ResourceMeta
-		for _, st := range resolveStates(cluster, states) {
-			result = append(result, st.idx.List(kind, ns, labelSel)...)
-		}
-		return mcp.NewToolResultText(mustJSON(result)), nil
-	})
-
 	s.AddTool(mcp.NewTool("get_resource",
 		mcp.WithDescription("Get the YAML content of a specific K8s resource"),
 		mcp.WithString("cluster", mcp.Required(), mcp.Description("Cluster name")),
+		mcp.WithString("group", mcp.Required(), mcp.Description("API group (use 'core' for core resources)")),
 		mcp.WithString("kind", mcp.Required(), mcp.Description("Resource kind")),
-		mcp.WithString("namespace", mcp.Required(), mcp.Description("Namespace (empty for cluster-scoped)")),
+		mcp.WithString("namespace", mcp.Description("Namespace (empty for cluster-scoped resources)")),
 		mcp.WithString("name", mcp.Required(), mcp.Description("Resource name")),
 	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		cluster, _ := args["cluster"].(string)
+		group, _ := args["group"].(string)
 		kind, _ := args["kind"].(string)
 		ns, _ := args["namespace"].(string)
 		name, _ := args["name"].(string)
-		state, ok := states[cluster]
+		st, ok := states[cluster]
 		if !ok {
 			return mcp.NewToolResultText("cluster not found"), nil
 		}
-		meta, ok := state.idx.Get(kind, ns, name)
+		meta, ok := st.idx.Get(group, kind, ns, name)
 		if !ok {
 			return mcp.NewToolResultText("not found"), nil
 		}
@@ -411,155 +427,275 @@ func buildMCPServer(states map[string]*ClusterState, clusterNames []string) http
 		return mcp.NewToolResultText(string(data)), nil
 	})
 
-	s.AddTool(mcp.NewTool("get_resource_history",
-		mcp.WithDescription("Get the commit history for a specific K8s resource"),
-		mcp.WithString("cluster", mcp.Required(), mcp.Description("Cluster name")),
-		mcp.WithString("kind", mcp.Required(), mcp.Description("Resource kind")),
-		mcp.WithString("namespace", mcp.Required(), mcp.Description("Namespace (empty for cluster-scoped)")),
-		mcp.WithString("name", mcp.Required(), mcp.Description("Resource name")),
-		mcp.WithNumber("n", mcp.Description("Maximum number of commits to return (default 20)")),
+	s.AddTool(mcp.NewTool("get_snapshot",
+		mcp.WithDescription("Get a snapshot of K8s resources at a point in time. Omit datetime for current state. CEL filtering only works without datetime."),
+		mcp.WithString("datetime", mcp.Description("RFC3339 datetime for historical snapshot (optional)")),
+		mcp.WithString("cluster", mcp.Description("Cluster name (optional)")),
+		mcp.WithString("group", mcp.Description("API group filter (optional)")),
+		mcp.WithString("kind", mcp.Description("Resource kind filter (optional)")),
+		mcp.WithString("namespace", mcp.Description("Namespace filter (optional)")),
+		mcp.WithString("name", mcp.Description("Resource name filter (optional)")),
+		mcp.WithString("cel", mcp.Description("CEL expression filter (only valid without datetime)")),
+		mcp.WithNumber("limit", mcp.Description("Maximum results to return (default 50)")),
+		mcp.WithNumber("offset", mcp.Description("Pagination offset (default 0)")),
 	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		cluster, _ := args["cluster"].(string)
+		group, _ := args["group"].(string)
 		kind, _ := args["kind"].(string)
 		ns, _ := args["namespace"].(string)
 		name, _ := args["name"].(string)
-		n := 20
-		if nv, ok := args["n"].(float64); ok && nv > 0 {
-			n = int(nv)
+		cel, _ := args["cel"].(string)
+		limit := 50
+		if lv, ok := args["limit"].(float64); ok && lv > 0 {
+			limit = int(lv)
 		}
-		state, ok := states[cluster]
-		if !ok {
-			return mcp.NewToolResultText("cluster not found"), nil
+
+		var all []index.ResourceMeta
+		for _, st := range resolveStates(cluster) {
+			var results []index.ResourceMeta
+			var err error
+			if cel != "" {
+				results, err = st.idx.Query(group, kind, ns, nil, cel)
+				if err != nil {
+					return mcp.NewToolResultText("cel error: " + err.Error()), nil
+				}
+			} else {
+				results = st.idx.List(group, kind, ns, nil)
+			}
+			if name != "" {
+				for _, r := range results {
+					if r.Name == name {
+						all = append(all, r)
+					}
+				}
+			} else {
+				all = append(all, results...)
+			}
 		}
-		meta, ok := state.idx.Get(kind, ns, name)
-		if !ok {
-			return mcp.NewToolResultText("not found"), nil
-		}
-		relPath := state.relPath(meta.FilePath)
-		if relPath == "" {
-			return mcp.NewToolResultText("cannot determine git path"), nil
-		}
-		entries, err := state.history(relPath, n)
-		if err != nil {
-			return mcp.NewToolResultText("error: " + err.Error()), nil
-		}
-		return mcp.NewToolResultText(mustJSON(entries)), nil
+		return mcp.NewToolResultText(mustJSON(all[:min(limit, len(all))])), nil
 	})
 
-	s.AddTool(mcp.NewTool("get_resource_diff",
+	s.AddTool(mcp.NewTool("get_history",
+		mcp.WithDescription("Get the change history for K8s resources"),
+		mcp.WithString("since", mcp.Description("RFC3339 start time (optional)")),
+		mcp.WithString("until", mcp.Description("RFC3339 end time (optional)")),
+		mcp.WithString("cluster", mcp.Description("Cluster name (optional)")),
+		mcp.WithString("group", mcp.Description("API group filter (optional)")),
+		mcp.WithString("kind", mcp.Description("Resource kind filter (optional)")),
+		mcp.WithString("namespace", mcp.Description("Namespace filter (optional)")),
+		mcp.WithString("name", mcp.Description("Resource name filter (optional)")),
+		mcp.WithString("changeType", mcp.Description("Change type: added, modified, or deleted (optional)")),
+		mcp.WithNumber("limit", mcp.Description("Maximum results (default 50)")),
+	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		cluster, _ := args["cluster"].(string)
+		group, _ := args["group"].(string)
+		kind, _ := args["kind"].(string)
+		ns, _ := args["namespace"].(string)
+		name, _ := args["name"].(string)
+		ct := gitindex.ChangeType(func() string { s, _ := args["changeType"].(string); return s }())
+		limit := 50
+		if lv, ok := args["limit"].(float64); ok && lv > 0 {
+			limit = int(lv)
+		}
+		var since, until *time.Time
+		if sv, ok := args["since"].(string); ok && sv != "" {
+			if t, err := time.Parse(time.RFC3339, sv); err == nil {
+				since = &t
+			}
+		}
+		if uv, ok := args["until"].(string); ok && uv != "" {
+			if t, err := time.Parse(time.RFC3339, uv); err == nil {
+				until = &t
+			}
+		}
+
+		var allEvents []gitindex.ChangeEvent
+		for _, clusterName := range clusterNames {
+			if cluster != "" && clusterName != cluster {
+				continue
+			}
+			st := states[clusterName]
+			st.mu.RLock()
+			ci := st.changeIdx
+			st.mu.RUnlock()
+			if ci == nil {
+				continue
+			}
+			events, _ := ci.Query(since, until, clusterName, group, kind, ns, name, ct, 1<<30, 0)
+			allEvents = append(allEvents, events...)
+		}
+		if len(allEvents) > limit {
+			allEvents = allEvents[:limit]
+		}
+		return mcp.NewToolResultText(mustJSON(allEvents)), nil
+	})
+
+	s.AddTool(mcp.NewTool("get_diff",
 		mcp.WithDescription("Get the before/after YAML for a resource between two commits"),
 		mcp.WithString("cluster", mcp.Required(), mcp.Description("Cluster name")),
+		mcp.WithString("group", mcp.Required(), mcp.Description("API group")),
 		mcp.WithString("kind", mcp.Required(), mcp.Description("Resource kind")),
-		mcp.WithString("namespace", mcp.Required(), mcp.Description("Namespace (empty for cluster-scoped)")),
+		mcp.WithString("namespace", mcp.Description("Namespace (empty for cluster-scoped)")),
 		mcp.WithString("name", mcp.Required(), mcp.Description("Resource name")),
 		mcp.WithString("from", mcp.Required(), mcp.Description("From commit SHA")),
 		mcp.WithString("to", mcp.Required(), mcp.Description("To commit SHA")),
 	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		cluster, _ := args["cluster"].(string)
+		group, _ := args["group"].(string)
 		kind, _ := args["kind"].(string)
 		ns, _ := args["namespace"].(string)
 		name, _ := args["name"].(string)
 		fromSHA, _ := args["from"].(string)
 		toSHA, _ := args["to"].(string)
-		if fromSHA == "" || toSHA == "" {
-			return mcp.NewToolResultText("from and to are required"), nil
-		}
-		state, ok := states[cluster]
+		st, ok := states[cluster]
 		if !ok {
 			return mcp.NewToolResultText("cluster not found"), nil
 		}
-		meta, ok := state.idx.Get(kind, ns, name)
+		meta, ok := st.idx.Get(group, kind, ns, name)
 		if !ok {
 			return mcp.NewToolResultText("not found"), nil
 		}
-		relPath := state.relPath(meta.FilePath)
+		relPath := st.relPath(meta.FilePath)
 		if relPath == "" {
 			return mcp.NewToolResultText("cannot determine git path"), nil
 		}
-		before, err := state.fileAt(relPath, fromSHA)
+		before, err := st.fileAt(relPath, fromSHA)
 		if err != nil {
 			return mcp.NewToolResultText("from: " + err.Error()), nil
 		}
-		after, err := state.fileAt(relPath, toSHA)
+		after, err := st.fileAt(relPath, toSHA)
 		if err != nil {
 			return mcp.NewToolResultText("to: " + err.Error()), nil
 		}
 		return mcp.NewToolResultText(mustJSON(map[string]string{"before": before, "after": after})), nil
 	})
 
-	s.AddTool(mcp.NewTool("get_churn",
-		mcp.WithDescription("Get churn statistics for K8s resources — shows which resource types change most frequently in git history"),
-		mcp.WithString("cluster", mcp.Description("Cluster name (optional, omit for all clusters)")),
-		mcp.WithNumber("n", mcp.Description("Number of commits to analyze (default 50)")),
-		mcp.WithNumber("threshold", mcp.Description("Minimum change ratio to include (0.0–1.0, default 0.5)")),
+	s.AddTool(mcp.NewTool("get_volatility",
+		mcp.WithDescription("Get the most frequently changing K8s resources, ranked by change ratio"),
+		mcp.WithString("cluster", mcp.Description("Cluster name (optional)")),
+		mcp.WithString("group", mcp.Description("API group filter (optional)")),
+		mcp.WithString("kind", mcp.Description("Resource kind filter (optional)")),
+		mcp.WithString("namespace", mcp.Description("Namespace filter (optional)")),
+		mcp.WithString("name", mcp.Description("Resource name filter (optional)")),
+		mcp.WithNumber("commits", mcp.Description("Number of recent commits to analyze (default 50)")),
+		mcp.WithNumber("threshold", mcp.Description("Minimum change ratio to include 0.0–1.0 (default 0.0)")),
+		mcp.WithNumber("limit", mcp.Description("Maximum results (default 50)")),
 	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		cluster, _ := args["cluster"].(string)
-		n := 50
-		if nv, ok := args["n"].(float64); ok && nv > 0 {
-			n = int(nv)
+		group, _ := args["group"].(string)
+		kind, _ := args["kind"].(string)
+		ns, _ := args["namespace"].(string)
+		name, _ := args["name"].(string)
+		commits := 50
+		if cv, ok := args["commits"].(float64); ok && cv > 0 {
+			commits = int(cv)
 		}
-		threshold := 0.5
+		threshold := 0.0
 		if tv, ok := args["threshold"].(float64); ok {
 			threshold = tv
 		}
-		type churnResult struct {
-			Cluster  string  `json:"cluster"`
-			Resource string  `json:"resource"`
-			Count    int     `json:"count"`
-			Total    int     `json:"total"`
-			Ratio    float64 `json:"ratio"`
+		limit := 50
+		if lv, ok := args["limit"].(float64); ok && lv > 0 {
+			limit = int(lv)
 		}
-		var result []churnResult
-		for name, state := range states {
-			if cluster != "" && name != cluster {
+
+		type entry struct {
+			Cluster   string  `json:"cluster"`
+			Group     string  `json:"group"`
+			Kind      string  `json:"kind"`
+			Namespace string  `json:"namespace"`
+			Name      string  `json:"name"`
+			Count     int     `json:"count"`
+			Total     int     `json:"total"`
+			Ratio     float64 `json:"ratio"`
+		}
+		var result []entry
+		for _, clusterName := range clusterNames {
+			if cluster != "" && clusterName != cluster {
 				continue
 			}
-			entries, _, err := state.churnReport(n)
-			if err != nil {
+			st := states[clusterName]
+			st.mu.RLock()
+			ci := st.changeIdx
+			st.mu.RUnlock()
+			if ci == nil {
 				continue
 			}
-			for _, e := range entries {
-				ratio := float64(e.Count) / float64(e.Total)
-				if ratio >= threshold {
-					result = append(result, churnResult{
-						Cluster:  name,
-						Resource: e.Resource,
-						Count:    e.Count,
-						Total:    e.Total,
-						Ratio:    ratio,
-					})
+			for _, e := range ci.Volatility(clusterName, group, kind, ns, name, commits) {
+				ratio := 0.0
+				if e.Total > 0 {
+					ratio = float64(e.Count) / float64(e.Total)
 				}
+				if ratio < threshold {
+					continue
+				}
+				result = append(result, entry{
+					Cluster:   e.Cluster,
+					Group:     e.Group,
+					Kind:      e.Kind,
+					Namespace: e.Namespace,
+					Name:      e.Name,
+					Count:     e.Count,
+					Total:     e.Total,
+					Ratio:     ratio,
+				})
 			}
+		}
+		if len(result) > limit {
+			result = result[:limit]
 		}
 		return mcp.NewToolResultText(mustJSON(result)), nil
 	})
 
-	s.AddTool(mcp.NewTool("query_resources",
-		mcp.WithDescription("Query K8s resources using a CEL expression. Examples: object.spec.replicas > 1, object.metadata.labels[\"app\"] == \"nginx\""),
-		mcp.WithString("cluster", mcp.Description("Cluster name (optional, omit for all clusters)")),
-		mcp.WithString("kind", mcp.Required(), mcp.Description("Resource kind (e.g. Pod, Deployment)")),
-		mcp.WithString("namespace", mcp.Description("Namespace to filter by (optional)")),
-		mcp.WithString("labels", mcp.Description("Label selector, comma-separated key=value pairs (optional)")),
-		mcp.WithString("expr", mcp.Description("CEL expression (optional). If omitted, returns all resources of the given kind.")),
+	s.AddTool(mcp.NewTool("get_volatility_fields",
+		mcp.WithDescription("Get field-level change frequencies for a specific resource kind"),
+		mcp.WithString("cluster", mcp.Description("Cluster name (optional)")),
+		mcp.WithString("group", mcp.Required(), mcp.Description("API group")),
+		mcp.WithString("kind", mcp.Required(), mcp.Description("Resource kind")),
+		mcp.WithString("namespace", mcp.Description("Namespace filter (optional)")),
+		mcp.WithString("name", mcp.Description("Resource name filter (optional)")),
+		mcp.WithNumber("commits", mcp.Description("Number of recent commits to analyze (default 50)")),
 	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		cluster, _ := args["cluster"].(string)
+		group, _ := args["group"].(string)
 		kind, _ := args["kind"].(string)
 		ns, _ := args["namespace"].(string)
-		labelSel := parseLabelSelector(func() string { s, _ := args["labels"].(string); return s }())
-		expr, _ := args["expr"].(string)
-		var result []index.ResourceMeta
-		for _, st := range resolveStates(cluster, states) {
-			res, err := st.idx.Query(kind, ns, labelSel, expr)
-			if err != nil {
-				return mcp.NewToolResultText("error: " + err.Error()), nil
-			}
-			result = append(result, res...)
+		name, _ := args["name"].(string)
+		commits := 50
+		if cv, ok := args["commits"].(float64); ok && cv > 0 {
+			commits = int(cv)
 		}
-		return mcp.NewToolResultText(mustJSON(result)), nil
+
+		var allEntries []gitindex.FieldVolatilityEntry
+		for _, clusterName := range clusterNames {
+			if cluster != "" && clusterName != cluster {
+				continue
+			}
+			st := states[clusterName]
+			st.mu.RLock()
+			ci := st.changeIdx
+			gc := st.gc
+			subDir := st.subDir
+			st.mu.RUnlock()
+			if ci == nil || gc == nil {
+				continue
+			}
+			events, _ := ci.Query(nil, nil, clusterName, group, kind, ns, name, "", 1<<30, 0)
+			if len(events) == 0 {
+				continue
+			}
+			entries, err := gitindex.FieldVolatilityFromRepo(gc.Repo(), events, subDir, commits)
+			if err != nil {
+				continue
+			}
+			allEntries = append(allEntries, entries...)
+		}
+		return mcp.NewToolResultText(mustJSON(allEntries)), nil
 	})
 
 	return mcpserver.NewStreamableHTTPServer(s)
@@ -603,20 +739,9 @@ func mustJSON(v any) string {
 	return string(b)
 }
 
-// parseLabelSelector parses "key=value,key2=value2" into a map.
-// A bare key (no "=") is treated as a key-existence check (empty value).
-func parseLabelSelector(s string) map[string]string {
-	if s == "" {
-		return nil
+func min(a, b int) int {
+	if a < b {
+		return a
 	}
-	result := make(map[string]string)
-	for _, part := range strings.Split(s, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		k, v, _ := strings.Cut(part, "=")
-		result[strings.TrimSpace(k)] = strings.TrimSpace(v)
-	}
-	return result
+	return b
 }

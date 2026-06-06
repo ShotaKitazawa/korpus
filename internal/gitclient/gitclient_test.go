@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/go-git/go-git/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -128,15 +129,9 @@ func setupRepoWithHistory(t *testing.T) (string, *Client) {
 	return cloneDir, client
 }
 
-func TestFileHistory(t *testing.T) {
+func TestRepo(t *testing.T) {
 	_, client := setupRepoWithHistory(t)
-
-	entries, err := client.FileHistory("pods.yaml", 10)
-	require.NoError(t, err)
-	require.Len(t, entries, 2)
-	assert.Contains(t, entries[0].Message, "backup: v2")
-	assert.Contains(t, entries[1].Message, "backup: v1")
-	assert.NotEmpty(t, entries[0].SHA)
+	assert.NotNil(t, client.Repo())
 }
 
 func TestLoadToken(t *testing.T) {
@@ -181,15 +176,26 @@ func TestLoadToken(t *testing.T) {
 func TestFileAtCommit(t *testing.T) {
 	_, client := setupRepoWithHistory(t)
 
-	entries, err := client.FileHistory("pods.yaml", 10)
+	// Collect commit SHAs via repo log (newest first).
+	iter, err := client.Repo().Log(&git.LogOptions{Order: git.LogOrderCommitterTime})
 	require.NoError(t, err)
-	require.Len(t, entries, 2)
+	defer iter.Close()
+	var shas []string
+	for {
+		c, err := iter.Next()
+		if err != nil {
+			break
+		}
+		shas = append(shas, c.Hash.String())
+	}
+	require.GreaterOrEqual(t, len(shas), 2, "expected at least 2 commits")
 
-	content, err := client.FileAtCommit("pods.yaml", entries[0].SHA)
+	// shas[0] = newest (v2), shas[1] = previous (v1)
+	content, err := client.FileAtCommit("pods.yaml", shas[0])
 	require.NoError(t, err)
 	assert.Equal(t, "v2", content)
 
-	content, err = client.FileAtCommit("pods.yaml", entries[1].SHA)
+	content, err = client.FileAtCommit("pods.yaml", shas[1])
 	require.NoError(t, err)
 	assert.Equal(t, "v1", content)
 }

@@ -7,14 +7,14 @@ import {
 } from "@testing-library/react"
 import { describe, it, expect, vi, afterEach } from "vitest"
 import ResourceDetail from "./ResourceDetail.tsx"
-import type { ResourceMeta } from "../App.tsx"
+import type { SnapshotResource } from "../App.tsx"
 
-const mockResource: ResourceMeta = {
+const mockResource: SnapshotResource = {
   cluster: "test-cluster",
+  group: "core",
   kind: "Pod",
   name: "my-pod",
   namespace: "default",
-  labels: { app: "my-app" },
 }
 
 // Quoted string values trigger green highlighting; numbers/bools/null use their own colors.
@@ -32,15 +32,27 @@ spec:
 const historyEntries = [
   {
     sha: "abc12345abcd",
-    message: "update pod",
+    changeType: "modified",
     timestamp: "2026-05-30T00:00:00Z",
+    cluster: "test-cluster",
+    group: "core",
+    kind: "Pod",
+    namespace: "default",
+    name: "my-pod",
   },
   {
     sha: "def67890efgh",
-    message: "initial",
+    changeType: "added",
     timestamp: "2026-05-29T00:00:00Z",
+    cluster: "test-cluster",
+    group: "core",
+    kind: "Pod",
+    namespace: "default",
+    name: "my-pod",
   },
 ]
+
+const historyPage = { items: historyEntries, total: 2, offset: 0, limit: 50 }
 
 function makeJsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -126,7 +138,7 @@ describe("ResourceDetail", () => {
   })
 
   it("switches to history tab and fetches", async () => {
-    const mockFetch = vi.fn().mockImplementation(jsonResponse([]))
+    const mockFetch = vi.fn().mockImplementation(jsonResponse(historyPage))
     vi.stubGlobal("fetch", mockFetch)
 
     render(<ResourceDetail resource={mockResource} yaml={sampleYaml} />)
@@ -136,16 +148,16 @@ describe("ResourceDetail", () => {
       expect(mockFetch).toHaveBeenCalled()
       const arg = mockFetch.mock.calls[0][0] as Request | string
       const url = arg instanceof Request ? arg.url : String(arg)
-      expect(url).toContain(
-        "/api/resources/test-cluster/Pod/default/my-pod/history",
-      )
+      expect(url).toContain("/api/history")
+      expect(url).toContain("cluster=test-cluster")
+      expect(url).toContain("name=my-pod")
     })
   })
 
   it("renders history entries", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockImplementation(jsonResponse(historyEntries)),
+      vi.fn().mockImplementation(jsonResponse(historyPage)),
     )
 
     render(<ResourceDetail resource={mockResource} yaml={sampleYaml} />)
@@ -153,14 +165,14 @@ describe("ResourceDetail", () => {
 
     await waitFor(() => {
       expect(screen.getByText("abc12345")).toBeTruthy() // sha.slice(0, 8)
-      expect(screen.getByText("update pod")).toBeTruthy()
+      expect(screen.getByText("modified")).toBeTruthy() // changeType
     })
   })
 
   it("loads diff on history entry click", async () => {
     const mockFetch = vi
       .fn()
-      .mockImplementationOnce(jsonResponse(historyEntries))
+      .mockImplementationOnce(jsonResponse(historyPage))
       .mockImplementationOnce(
         jsonResponse({ before: "kind: Pod\n", after: "kind: Pod\nspec:\n" }),
       )
@@ -170,22 +182,21 @@ describe("ResourceDetail", () => {
     fireEvent.click(screen.getByText("History"))
     await waitFor(() => expect(screen.getByText("abc12345")).toBeTruthy())
 
-    fireEvent.click(screen.getByText("update pod"))
+    fireEvent.click(screen.getByText("modified"))
 
     await waitFor(() => {
       expect(mockFetch).toHaveBeenCalledTimes(2)
       const arg = mockFetch.mock.calls[1][0] as Request | string
       const url = arg instanceof Request ? arg.url : String(arg)
-      expect(url).toContain(
-        "/api/resources/test-cluster/Pod/default/my-pod/diff",
-      )
+      expect(url).toContain("/api/diff")
+      expect(url).toContain("name=my-pod")
     })
   })
 
   it("renders diff panes", async () => {
     const fetchMock = vi
       .fn()
-      .mockImplementationOnce(jsonResponse(historyEntries))
+      .mockImplementationOnce(jsonResponse(historyPage))
       .mockImplementationOnce(
         jsonResponse({ before: "before: yaml\n", after: "after: yaml\n" }),
       )
@@ -194,7 +205,7 @@ describe("ResourceDetail", () => {
     render(<ResourceDetail resource={mockResource} yaml={sampleYaml} />)
     fireEvent.click(screen.getByText("History"))
     await waitFor(() => expect(screen.getByText("abc12345")).toBeTruthy())
-    fireEvent.click(screen.getByText("update pod"))
+    fireEvent.click(screen.getByText("modified"))
 
     await waitFor(() => {
       expect(screen.queryByText("click a commit to see diff")).toBeNull()
@@ -202,7 +213,14 @@ describe("ResourceDetail", () => {
   })
 
   it("resets to yaml tab when resource changes", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockImplementation(jsonResponse([])))
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockImplementation(
+          jsonResponse({ items: [], total: 0, offset: 0, limit: 50 }),
+        ),
+    )
 
     const { rerender } = render(
       <ResourceDetail resource={mockResource} yaml={sampleYaml} />,
@@ -211,7 +229,10 @@ describe("ResourceDetail", () => {
     fireEvent.click(screen.getByText("History"))
     await waitFor(() => expect(screen.getByText("no history")).toBeTruthy())
 
-    const otherResource: ResourceMeta = { ...mockResource, name: "other-pod" }
+    const otherResource: SnapshotResource = {
+      ...mockResource,
+      name: "other-pod",
+    }
     rerender(<ResourceDetail resource={otherResource} yaml="kind: Pod\n" />)
 
     await waitFor(() => {

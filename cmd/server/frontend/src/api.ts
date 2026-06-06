@@ -20,8 +20,8 @@ export const api = createClient<paths>({
   },
 })
 export type { components }
-export type ResourceMeta = components["schemas"]["ResourceMeta"]
-export type HistoryEntry = components["schemas"]["HistoryEntry"]
+export type SnapshotResource = components["schemas"]["SnapshotResource"]
+export type ChangeEvent = components["schemas"]["ChangeEvent"]
 export type DiffResult = components["schemas"]["DiffResult"]
-export type ResourceListPage = components["schemas"]["ResourceListPage"]
-export type ChurnEntry = components["schemas"]["ChurnEntry"]
+export type VolatilityEntry = components["schemas"]["VolatilityEntry"]
+export type KindInfo = components["schemas"]["KindInfo"]

@@ -16,6 +16,14 @@ beforeEach(() => {
           new Response(JSON.stringify(["prod", "staging"]), { status: 200 }),
         )
       }
+      if (url.includes("/api/snapshot")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ items: [], total: 0, offset: 0, limit: 50 }),
+            { status: 200 },
+          ),
+        )
+      }
       return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }))
     }),
   )

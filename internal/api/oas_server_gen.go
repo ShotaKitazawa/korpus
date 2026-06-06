@@ -8,26 +8,34 @@ import (
 
 // Handler handles operations described by OpenAPI v3 specification.
 type Handler interface {
-	// GetChurn implements GetChurn operation.
+	// GetDiff implements GetDiff operation.
 	//
-	// GET /api/churn
-	GetChurn(ctx context.Context, params GetChurnParams) ([]ChurnEntry, error)
+	// GET /api/diff
+	GetDiff(ctx context.Context, params GetDiffParams) (GetDiffRes, error)
+	// GetHistory implements GetHistory operation.
+	//
+	// GET /api/history
+	GetHistory(ctx context.Context, params GetHistoryParams) (*HistoryPage, error)
 	// GetResource implements GetResource operation.
 	//
-	// GET /api/resources/{cluster}/{kind}/{namespace}/{name}
+	// GET /api/resource
 	GetResource(ctx context.Context, params GetResourceParams) (GetResourceRes, error)
-	// GetResourceDiff implements GetResourceDiff operation.
+	// GetSnapshot implements GetSnapshot operation.
 	//
-	// GET /api/resources/{cluster}/{kind}/{namespace}/{name}/diff
-	GetResourceDiff(ctx context.Context, params GetResourceDiffParams) (GetResourceDiffRes, error)
-	// GetResourceHistory implements GetResourceHistory operation.
-	//
-	// GET /api/resources/{cluster}/{kind}/{namespace}/{name}/history
-	GetResourceHistory(ctx context.Context, params GetResourceHistoryParams) (GetResourceHistoryRes, error)
+	// GET /api/snapshot
+	GetSnapshot(ctx context.Context, params GetSnapshotParams) (GetSnapshotRes, error)
 	// GetStatus implements GetStatus operation.
 	//
 	// GET /api/status
 	GetStatus(ctx context.Context) (*StatusResponse, error)
+	// GetVolatility implements GetVolatility operation.
+	//
+	// GET /api/volatility
+	GetVolatility(ctx context.Context, params GetVolatilityParams) (*VolatilityPage, error)
+	// GetVolatilityFields implements GetVolatilityFields operation.
+	//
+	// GET /api/volatility/fields
+	GetVolatilityFields(ctx context.Context, params GetVolatilityFieldsParams) (GetVolatilityFieldsRes, error)
 	// Healthz implements Healthz operation.
 	//
 	// GET /healthz
@@ -36,22 +44,18 @@ type Handler interface {
 	//
 	// GET /api/clusters
 	ListClusters(ctx context.Context) ([]string, error)
+	// ListGroups implements ListGroups operation.
+	//
+	// GET /api/groups
+	ListGroups(ctx context.Context, params ListGroupsParams) ([]string, error)
 	// ListKinds implements ListKinds operation.
 	//
 	// GET /api/kinds
-	ListKinds(ctx context.Context, params ListKindsParams) ([]string, error)
+	ListKinds(ctx context.Context, params ListKindsParams) ([]KindInfo, error)
 	// ListNamespaces implements ListNamespaces operation.
 	//
 	// GET /api/namespaces
 	ListNamespaces(ctx context.Context, params ListNamespacesParams) ([]string, error)
-	// ListResources implements ListResources operation.
-	//
-	// GET /api/resources
-	ListResources(ctx context.Context, params ListResourcesParams) (*ResourceListPage, error)
-	// QueryResources implements QueryResources operation.
-	//
-	// GET /api/query
-	QueryResources(ctx context.Context, params QueryResourcesParams) (QueryResourcesRes, error)
 }
 
 // Server implements http server based on OpenAPI v3 specification and

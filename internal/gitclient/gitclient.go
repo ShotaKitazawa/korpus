@@ -16,13 +16,6 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 )
 
-// HistoryEntry represents a single commit that touched a file.
-type HistoryEntry struct {
-	SHA       string    `json:"sha"`
-	Timestamp time.Time `json:"timestamp"`
-	Message   string    `json:"message"`
-}
-
 // Client wraps a go-git repository.
 type Client struct {
 	repo      *git.Repository
@@ -118,31 +111,8 @@ func (c *Client) Pull() error {
 	return err
 }
 
-// FileHistory returns up to n commits that touched relPath (relative to the repo root).
-func (c *Client) FileHistory(relPath string, n int) ([]HistoryEntry, error) {
-	iter, err := c.repo.Log(&git.LogOptions{
-		PathFilter: func(p string) bool { return p == relPath },
-		Order:      git.LogOrderCommitterTime,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("git log: %w", err)
-	}
-	defer iter.Close()
-
-	var entries []HistoryEntry
-	for len(entries) < n {
-		commit, err := iter.Next()
-		if err != nil {
-			break
-		}
-		entries = append(entries, HistoryEntry{
-			SHA:       commit.Hash.String(),
-			Timestamp: commit.Author.When.UTC(),
-			Message:   commit.Message,
-		})
-	}
-	return entries, nil
-}
+// Repo returns the underlying git.Repository for use by gitindex.
+func (c *Client) Repo() *git.Repository { return c.repo }
 
 // FileAtCommit returns the content of relPath at the given commit SHA.
 func (c *Client) FileAtCommit(relPath, sha string) (string, error) {

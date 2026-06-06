@@ -40,7 +40,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
-	args := [4]string{}
 
 	// Static code generated router with unwrapped path search.
 	switch {
@@ -73,68 +72,104 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					break
 				}
 				switch elem[0] {
-				case 'c': // Prefix: "c"
+				case 'c': // Prefix: "clusters"
 
-					if l := len("c"); len(elem) >= l && elem[0:l] == "c" {
+					if l := len("clusters"); len(elem) >= l && elem[0:l] == "clusters" {
 						elem = elem[l:]
 					} else {
 						break
 					}
 
 					if len(elem) == 0 {
+						// Leaf node.
+						switch r.Method {
+						case "GET":
+							s.handleListClustersRequest([0]string{}, elemIsEscaped, w, r)
+						default:
+							s.notAllowed(w, r, notAllowedParams{
+								allowedMethods: "GET",
+								allowedHeaders: nil,
+								acceptPost:     "",
+								acceptPatch:    "",
+							})
+						}
+
+						return
+					}
+
+				case 'd': // Prefix: "diff"
+
+					if l := len("diff"); len(elem) >= l && elem[0:l] == "diff" {
+						elem = elem[l:]
+					} else {
 						break
 					}
-					switch elem[0] {
-					case 'h': // Prefix: "hurn"
 
-						if l := len("hurn"); len(elem) >= l && elem[0:l] == "hurn" {
-							elem = elem[l:]
-						} else {
-							break
+					if len(elem) == 0 {
+						// Leaf node.
+						switch r.Method {
+						case "GET":
+							s.handleGetDiffRequest([0]string{}, elemIsEscaped, w, r)
+						default:
+							s.notAllowed(w, r, notAllowedParams{
+								allowedMethods: "GET",
+								allowedHeaders: nil,
+								acceptPost:     "",
+								acceptPatch:    "",
+							})
 						}
 
-						if len(elem) == 0 {
-							// Leaf node.
-							switch r.Method {
-							case "GET":
-								s.handleGetChurnRequest([0]string{}, elemIsEscaped, w, r)
-							default:
-								s.notAllowed(w, r, notAllowedParams{
-									allowedMethods: "GET",
-									allowedHeaders: nil,
-									acceptPost:     "",
-									acceptPatch:    "",
-								})
-							}
+						return
+					}
 
-							return
+				case 'g': // Prefix: "groups"
+
+					if l := len("groups"); len(elem) >= l && elem[0:l] == "groups" {
+						elem = elem[l:]
+					} else {
+						break
+					}
+
+					if len(elem) == 0 {
+						// Leaf node.
+						switch r.Method {
+						case "GET":
+							s.handleListGroupsRequest([0]string{}, elemIsEscaped, w, r)
+						default:
+							s.notAllowed(w, r, notAllowedParams{
+								allowedMethods: "GET",
+								allowedHeaders: nil,
+								acceptPost:     "",
+								acceptPatch:    "",
+							})
 						}
 
-					case 'l': // Prefix: "lusters"
+						return
+					}
 
-						if l := len("lusters"); len(elem) >= l && elem[0:l] == "lusters" {
-							elem = elem[l:]
-						} else {
-							break
+				case 'h': // Prefix: "history"
+
+					if l := len("history"); len(elem) >= l && elem[0:l] == "history" {
+						elem = elem[l:]
+					} else {
+						break
+					}
+
+					if len(elem) == 0 {
+						// Leaf node.
+						switch r.Method {
+						case "GET":
+							s.handleGetHistoryRequest([0]string{}, elemIsEscaped, w, r)
+						default:
+							s.notAllowed(w, r, notAllowedParams{
+								allowedMethods: "GET",
+								allowedHeaders: nil,
+								acceptPost:     "",
+								acceptPatch:    "",
+							})
 						}
 
-						if len(elem) == 0 {
-							// Leaf node.
-							switch r.Method {
-							case "GET":
-								s.handleListClustersRequest([0]string{}, elemIsEscaped, w, r)
-							default:
-								s.notAllowed(w, r, notAllowedParams{
-									allowedMethods: "GET",
-									allowedHeaders: nil,
-									acceptPost:     "",
-									acceptPatch:    "",
-								})
-							}
-
-							return
-						}
-
+						return
 					}
 
 				case 'k': // Prefix: "kinds"
@@ -187,9 +222,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						return
 					}
 
-				case 'q': // Prefix: "query"
+				case 'r': // Prefix: "resource"
 
-					if l := len("query"); len(elem) >= l && elem[0:l] == "query" {
+					if l := len("resource"); len(elem) >= l && elem[0:l] == "resource" {
 						elem = elem[l:]
 					} else {
 						break
@@ -199,7 +234,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						// Leaf node.
 						switch r.Method {
 						case "GET":
-							s.handleQueryResourcesRequest([0]string{}, elemIsEscaped, w, r)
+							s.handleGetResourceRequest([0]string{}, elemIsEscaped, w, r)
 						default:
 							s.notAllowed(w, r, notAllowedParams{
 								allowedMethods: "GET",
@@ -212,9 +247,73 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						return
 					}
 
-				case 'r': // Prefix: "resources"
+				case 's': // Prefix: "s"
 
-					if l := len("resources"); len(elem) >= l && elem[0:l] == "resources" {
+					if l := len("s"); len(elem) >= l && elem[0:l] == "s" {
+						elem = elem[l:]
+					} else {
+						break
+					}
+
+					if len(elem) == 0 {
+						break
+					}
+					switch elem[0] {
+					case 'n': // Prefix: "napshot"
+
+						if l := len("napshot"); len(elem) >= l && elem[0:l] == "napshot" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch r.Method {
+							case "GET":
+								s.handleGetSnapshotRequest([0]string{}, elemIsEscaped, w, r)
+							default:
+								s.notAllowed(w, r, notAllowedParams{
+									allowedMethods: "GET",
+									allowedHeaders: nil,
+									acceptPost:     "",
+									acceptPatch:    "",
+								})
+							}
+
+							return
+						}
+
+					case 't': // Prefix: "tatus"
+
+						if l := len("tatus"); len(elem) >= l && elem[0:l] == "tatus" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch r.Method {
+							case "GET":
+								s.handleGetStatusRequest([0]string{}, elemIsEscaped, w, r)
+							default:
+								s.notAllowed(w, r, notAllowedParams{
+									allowedMethods: "GET",
+									allowedHeaders: nil,
+									acceptPost:     "",
+									acceptPatch:    "",
+								})
+							}
+
+							return
+						}
+
+					}
+
+				case 'v': // Prefix: "volatility"
+
+					if l := len("volatility"); len(elem) >= l && elem[0:l] == "volatility" {
 						elem = elem[l:]
 					} else {
 						break
@@ -223,7 +322,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					if len(elem) == 0 {
 						switch r.Method {
 						case "GET":
-							s.handleListResourcesRequest([0]string{}, elemIsEscaped, w, r)
+							s.handleGetVolatilityRequest([0]string{}, elemIsEscaped, w, r)
 						default:
 							s.notAllowed(w, r, notAllowedParams{
 								allowedMethods: "GET",
@@ -236,214 +335,31 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						return
 					}
 					switch elem[0] {
-					case '/': // Prefix: "/"
+					case '/': // Prefix: "/fields"
 
-						if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+						if l := len("/fields"); len(elem) >= l && elem[0:l] == "/fields" {
 							elem = elem[l:]
 						} else {
 							break
 						}
 
-						// Param: "cluster"
-						// Match until "/"
-						idx := strings.IndexByte(elem, '/')
-						if idx < 0 {
-							idx = len(elem)
-						}
-						args[0] = elem[:idx]
-						elem = elem[idx:]
-
 						if len(elem) == 0 {
-							break
-						}
-						switch elem[0] {
-						case '/': // Prefix: "/"
-
-							if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-								elem = elem[l:]
-							} else {
-								break
+							// Leaf node.
+							switch r.Method {
+							case "GET":
+								s.handleGetVolatilityFieldsRequest([0]string{}, elemIsEscaped, w, r)
+							default:
+								s.notAllowed(w, r, notAllowedParams{
+									allowedMethods: "GET",
+									allowedHeaders: nil,
+									acceptPost:     "",
+									acceptPatch:    "",
+								})
 							}
 
-							// Param: "kind"
-							// Match until "/"
-							idx := strings.IndexByte(elem, '/')
-							if idx < 0 {
-								idx = len(elem)
-							}
-							args[1] = elem[:idx]
-							elem = elem[idx:]
-
-							if len(elem) == 0 {
-								break
-							}
-							switch elem[0] {
-							case '/': // Prefix: "/"
-
-								if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								// Param: "namespace"
-								// Match until "/"
-								idx := strings.IndexByte(elem, '/')
-								if idx < 0 {
-									idx = len(elem)
-								}
-								args[2] = elem[:idx]
-								elem = elem[idx:]
-
-								if len(elem) == 0 {
-									break
-								}
-								switch elem[0] {
-								case '/': // Prefix: "/"
-
-									if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									// Param: "name"
-									// Match until "/"
-									idx := strings.IndexByte(elem, '/')
-									if idx < 0 {
-										idx = len(elem)
-									}
-									args[3] = elem[:idx]
-									elem = elem[idx:]
-
-									if len(elem) == 0 {
-										switch r.Method {
-										case "GET":
-											s.handleGetResourceRequest([4]string{
-												args[0],
-												args[1],
-												args[2],
-												args[3],
-											}, elemIsEscaped, w, r)
-										default:
-											s.notAllowed(w, r, notAllowedParams{
-												allowedMethods: "GET",
-												allowedHeaders: nil,
-												acceptPost:     "",
-												acceptPatch:    "",
-											})
-										}
-
-										return
-									}
-									switch elem[0] {
-									case '/': // Prefix: "/"
-
-										if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-											elem = elem[l:]
-										} else {
-											break
-										}
-
-										if len(elem) == 0 {
-											break
-										}
-										switch elem[0] {
-										case 'd': // Prefix: "diff"
-
-											if l := len("diff"); len(elem) >= l && elem[0:l] == "diff" {
-												elem = elem[l:]
-											} else {
-												break
-											}
-
-											if len(elem) == 0 {
-												// Leaf node.
-												switch r.Method {
-												case "GET":
-													s.handleGetResourceDiffRequest([4]string{
-														args[0],
-														args[1],
-														args[2],
-														args[3],
-													}, elemIsEscaped, w, r)
-												default:
-													s.notAllowed(w, r, notAllowedParams{
-														allowedMethods: "GET",
-														allowedHeaders: nil,
-														acceptPost:     "",
-														acceptPatch:    "",
-													})
-												}
-
-												return
-											}
-
-										case 'h': // Prefix: "history"
-
-											if l := len("history"); len(elem) >= l && elem[0:l] == "history" {
-												elem = elem[l:]
-											} else {
-												break
-											}
-
-											if len(elem) == 0 {
-												// Leaf node.
-												switch r.Method {
-												case "GET":
-													s.handleGetResourceHistoryRequest([4]string{
-														args[0],
-														args[1],
-														args[2],
-														args[3],
-													}, elemIsEscaped, w, r)
-												default:
-													s.notAllowed(w, r, notAllowedParams{
-														allowedMethods: "GET",
-														allowedHeaders: nil,
-														acceptPost:     "",
-														acceptPatch:    "",
-													})
-												}
-
-												return
-											}
-
-										}
-
-									}
-
-								}
-
-							}
-
+							return
 						}
 
-					}
-
-				case 's': // Prefix: "status"
-
-					if l := len("status"); len(elem) >= l && elem[0:l] == "status" {
-						elem = elem[l:]
-					} else {
-						break
-					}
-
-					if len(elem) == 0 {
-						// Leaf node.
-						switch r.Method {
-						case "GET":
-							s.handleGetStatusRequest([0]string{}, elemIsEscaped, w, r)
-						default:
-							s.notAllowed(w, r, notAllowedParams{
-								allowedMethods: "GET",
-								allowedHeaders: nil,
-								acceptPost:     "",
-								acceptPatch:    "",
-							})
-						}
-
-						return
 					}
 
 				}
@@ -488,7 +404,7 @@ type Route struct {
 	operationGroup string
 	pathPattern    string
 	count          int
-	args           [4]string
+	args           [0]string
 }
 
 // Name returns ogen operation name.
@@ -585,68 +501,104 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 					break
 				}
 				switch elem[0] {
-				case 'c': // Prefix: "c"
+				case 'c': // Prefix: "clusters"
 
-					if l := len("c"); len(elem) >= l && elem[0:l] == "c" {
+					if l := len("clusters"); len(elem) >= l && elem[0:l] == "clusters" {
 						elem = elem[l:]
 					} else {
 						break
 					}
 
 					if len(elem) == 0 {
+						// Leaf node.
+						switch method {
+						case "GET":
+							r.name = ListClustersOperation
+							r.summary = ""
+							r.operationID = "ListClusters"
+							r.operationGroup = ""
+							r.pathPattern = "/api/clusters"
+							r.args = args
+							r.count = 0
+							return r, true
+						default:
+							return
+						}
+					}
+
+				case 'd': // Prefix: "diff"
+
+					if l := len("diff"); len(elem) >= l && elem[0:l] == "diff" {
+						elem = elem[l:]
+					} else {
 						break
 					}
-					switch elem[0] {
-					case 'h': // Prefix: "hurn"
 
-						if l := len("hurn"); len(elem) >= l && elem[0:l] == "hurn" {
-							elem = elem[l:]
-						} else {
-							break
+					if len(elem) == 0 {
+						// Leaf node.
+						switch method {
+						case "GET":
+							r.name = GetDiffOperation
+							r.summary = ""
+							r.operationID = "GetDiff"
+							r.operationGroup = ""
+							r.pathPattern = "/api/diff"
+							r.args = args
+							r.count = 0
+							return r, true
+						default:
+							return
 						}
+					}
 
-						if len(elem) == 0 {
-							// Leaf node.
-							switch method {
-							case "GET":
-								r.name = GetChurnOperation
-								r.summary = ""
-								r.operationID = "GetChurn"
-								r.operationGroup = ""
-								r.pathPattern = "/api/churn"
-								r.args = args
-								r.count = 0
-								return r, true
-							default:
-								return
-							}
+				case 'g': // Prefix: "groups"
+
+					if l := len("groups"); len(elem) >= l && elem[0:l] == "groups" {
+						elem = elem[l:]
+					} else {
+						break
+					}
+
+					if len(elem) == 0 {
+						// Leaf node.
+						switch method {
+						case "GET":
+							r.name = ListGroupsOperation
+							r.summary = ""
+							r.operationID = "ListGroups"
+							r.operationGroup = ""
+							r.pathPattern = "/api/groups"
+							r.args = args
+							r.count = 0
+							return r, true
+						default:
+							return
 						}
+					}
 
-					case 'l': // Prefix: "lusters"
+				case 'h': // Prefix: "history"
 
-						if l := len("lusters"); len(elem) >= l && elem[0:l] == "lusters" {
-							elem = elem[l:]
-						} else {
-							break
+					if l := len("history"); len(elem) >= l && elem[0:l] == "history" {
+						elem = elem[l:]
+					} else {
+						break
+					}
+
+					if len(elem) == 0 {
+						// Leaf node.
+						switch method {
+						case "GET":
+							r.name = GetHistoryOperation
+							r.summary = ""
+							r.operationID = "GetHistory"
+							r.operationGroup = ""
+							r.pathPattern = "/api/history"
+							r.args = args
+							r.count = 0
+							return r, true
+						default:
+							return
 						}
-
-						if len(elem) == 0 {
-							// Leaf node.
-							switch method {
-							case "GET":
-								r.name = ListClustersOperation
-								r.summary = ""
-								r.operationID = "ListClusters"
-								r.operationGroup = ""
-								r.pathPattern = "/api/clusters"
-								r.args = args
-								r.count = 0
-								return r, true
-							default:
-								return
-							}
-						}
-
 					}
 
 				case 'k': // Prefix: "kinds"
@@ -699,9 +651,9 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 						}
 					}
 
-				case 'q': // Prefix: "query"
+				case 'r': // Prefix: "resource"
 
-					if l := len("query"); len(elem) >= l && elem[0:l] == "query" {
+					if l := len("resource"); len(elem) >= l && elem[0:l] == "resource" {
 						elem = elem[l:]
 					} else {
 						break
@@ -711,11 +663,11 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 						// Leaf node.
 						switch method {
 						case "GET":
-							r.name = QueryResourcesOperation
+							r.name = GetResourceOperation
 							r.summary = ""
-							r.operationID = "QueryResources"
+							r.operationID = "GetResource"
 							r.operationGroup = ""
-							r.pathPattern = "/api/query"
+							r.pathPattern = "/api/resource"
 							r.args = args
 							r.count = 0
 							return r, true
@@ -724,9 +676,73 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 						}
 					}
 
-				case 'r': // Prefix: "resources"
+				case 's': // Prefix: "s"
 
-					if l := len("resources"); len(elem) >= l && elem[0:l] == "resources" {
+					if l := len("s"); len(elem) >= l && elem[0:l] == "s" {
+						elem = elem[l:]
+					} else {
+						break
+					}
+
+					if len(elem) == 0 {
+						break
+					}
+					switch elem[0] {
+					case 'n': // Prefix: "napshot"
+
+						if l := len("napshot"); len(elem) >= l && elem[0:l] == "napshot" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch method {
+							case "GET":
+								r.name = GetSnapshotOperation
+								r.summary = ""
+								r.operationID = "GetSnapshot"
+								r.operationGroup = ""
+								r.pathPattern = "/api/snapshot"
+								r.args = args
+								r.count = 0
+								return r, true
+							default:
+								return
+							}
+						}
+
+					case 't': // Prefix: "tatus"
+
+						if l := len("tatus"); len(elem) >= l && elem[0:l] == "tatus" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch method {
+							case "GET":
+								r.name = GetStatusOperation
+								r.summary = ""
+								r.operationID = "GetStatus"
+								r.operationGroup = ""
+								r.pathPattern = "/api/status"
+								r.args = args
+								r.count = 0
+								return r, true
+							default:
+								return
+							}
+						}
+
+					}
+
+				case 'v': // Prefix: "volatility"
+
+					if l := len("volatility"); len(elem) >= l && elem[0:l] == "volatility" {
 						elem = elem[l:]
 					} else {
 						break
@@ -735,11 +751,11 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 					if len(elem) == 0 {
 						switch method {
 						case "GET":
-							r.name = ListResourcesOperation
+							r.name = GetVolatilityOperation
 							r.summary = ""
-							r.operationID = "ListResources"
+							r.operationID = "GetVolatility"
 							r.operationGroup = ""
-							r.pathPattern = "/api/resources"
+							r.pathPattern = "/api/volatility"
 							r.args = args
 							r.count = 0
 							return r, true
@@ -748,199 +764,31 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 						}
 					}
 					switch elem[0] {
-					case '/': // Prefix: "/"
+					case '/': // Prefix: "/fields"
 
-						if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+						if l := len("/fields"); len(elem) >= l && elem[0:l] == "/fields" {
 							elem = elem[l:]
 						} else {
 							break
 						}
 
-						// Param: "cluster"
-						// Match until "/"
-						idx := strings.IndexByte(elem, '/')
-						if idx < 0 {
-							idx = len(elem)
-						}
-						args[0] = elem[:idx]
-						elem = elem[idx:]
-
 						if len(elem) == 0 {
-							break
-						}
-						switch elem[0] {
-						case '/': // Prefix: "/"
-
-							if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-								elem = elem[l:]
-							} else {
-								break
+							// Leaf node.
+							switch method {
+							case "GET":
+								r.name = GetVolatilityFieldsOperation
+								r.summary = ""
+								r.operationID = "GetVolatilityFields"
+								r.operationGroup = ""
+								r.pathPattern = "/api/volatility/fields"
+								r.args = args
+								r.count = 0
+								return r, true
+							default:
+								return
 							}
-
-							// Param: "kind"
-							// Match until "/"
-							idx := strings.IndexByte(elem, '/')
-							if idx < 0 {
-								idx = len(elem)
-							}
-							args[1] = elem[:idx]
-							elem = elem[idx:]
-
-							if len(elem) == 0 {
-								break
-							}
-							switch elem[0] {
-							case '/': // Prefix: "/"
-
-								if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								// Param: "namespace"
-								// Match until "/"
-								idx := strings.IndexByte(elem, '/')
-								if idx < 0 {
-									idx = len(elem)
-								}
-								args[2] = elem[:idx]
-								elem = elem[idx:]
-
-								if len(elem) == 0 {
-									break
-								}
-								switch elem[0] {
-								case '/': // Prefix: "/"
-
-									if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-										elem = elem[l:]
-									} else {
-										break
-									}
-
-									// Param: "name"
-									// Match until "/"
-									idx := strings.IndexByte(elem, '/')
-									if idx < 0 {
-										idx = len(elem)
-									}
-									args[3] = elem[:idx]
-									elem = elem[idx:]
-
-									if len(elem) == 0 {
-										switch method {
-										case "GET":
-											r.name = GetResourceOperation
-											r.summary = ""
-											r.operationID = "GetResource"
-											r.operationGroup = ""
-											r.pathPattern = "/api/resources/{cluster}/{kind}/{namespace}/{name}"
-											r.args = args
-											r.count = 4
-											return r, true
-										default:
-											return
-										}
-									}
-									switch elem[0] {
-									case '/': // Prefix: "/"
-
-										if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
-											elem = elem[l:]
-										} else {
-											break
-										}
-
-										if len(elem) == 0 {
-											break
-										}
-										switch elem[0] {
-										case 'd': // Prefix: "diff"
-
-											if l := len("diff"); len(elem) >= l && elem[0:l] == "diff" {
-												elem = elem[l:]
-											} else {
-												break
-											}
-
-											if len(elem) == 0 {
-												// Leaf node.
-												switch method {
-												case "GET":
-													r.name = GetResourceDiffOperation
-													r.summary = ""
-													r.operationID = "GetResourceDiff"
-													r.operationGroup = ""
-													r.pathPattern = "/api/resources/{cluster}/{kind}/{namespace}/{name}/diff"
-													r.args = args
-													r.count = 4
-													return r, true
-												default:
-													return
-												}
-											}
-
-										case 'h': // Prefix: "history"
-
-											if l := len("history"); len(elem) >= l && elem[0:l] == "history" {
-												elem = elem[l:]
-											} else {
-												break
-											}
-
-											if len(elem) == 0 {
-												// Leaf node.
-												switch method {
-												case "GET":
-													r.name = GetResourceHistoryOperation
-													r.summary = ""
-													r.operationID = "GetResourceHistory"
-													r.operationGroup = ""
-													r.pathPattern = "/api/resources/{cluster}/{kind}/{namespace}/{name}/history"
-													r.args = args
-													r.count = 4
-													return r, true
-												default:
-													return
-												}
-											}
-
-										}
-
-									}
-
-								}
-
-							}
-
 						}
 
-					}
-
-				case 's': // Prefix: "status"
-
-					if l := len("status"); len(elem) >= l && elem[0:l] == "status" {
-						elem = elem[l:]
-					} else {
-						break
-					}
-
-					if len(elem) == 0 {
-						// Leaf node.
-						switch method {
-						case "GET":
-							r.name = GetStatusOperation
-							r.summary = ""
-							r.operationID = "GetStatus"
-							r.operationGroup = ""
-							r.pathPattern = "/api/status"
-							r.args = args
-							r.count = 0
-							return r, true
-						default:
-							return
-						}
 					}
 
 				}

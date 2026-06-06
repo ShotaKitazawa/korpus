@@ -1,24 +1,24 @@
 import { useEffect, useState } from "react"
-import { api, type ChurnEntry } from "../api.ts"
+import { api, type VolatilityEntry } from "../api.ts"
 
 interface Props {
   onSelectKind: (kind: string) => void
 }
 
 export default function ChurnView({ onSelectKind }: Props) {
-  const [entries, setEntries] = useState<ChurnEntry[]>([])
+  const [entries, setEntries] = useState<VolatilityEntry[]>([])
   const [loading, setLoading] = useState(false)
-  const [n, setN] = useState(50)
+  const [commits, setCommits] = useState(50)
   const [threshold, setThreshold] = useState(0.5)
 
   const load = () => {
     setLoading(true)
     api
-      .GET("/api/churn", {
-        params: { query: { n, threshold } },
+      .GET("/api/volatility", {
+        params: { query: { commits, threshold } },
       })
       .then(({ data }) => {
-        setEntries(data ?? [])
+        setEntries(data?.items ?? [])
         setLoading(false)
       })
       .catch(() => setLoading(false))
@@ -49,10 +49,10 @@ export default function ChurnView({ onSelectKind }: Props) {
           lookback commits:
           <input
             type="number"
-            value={n}
+            value={commits}
             min={1}
             max={500}
-            onChange={(e) => setN(Number(e.target.value))}
+            onChange={(e) => setCommits(Number(e.target.value))}
             style={{
               marginLeft: 4,
               width: 60,
@@ -96,7 +96,7 @@ export default function ChurnView({ onSelectKind }: Props) {
 
       {!loading && entries.length === 0 && (
         <div style={{ color: "#888", fontSize: 13 }}>
-          no high-churn resources found (threshold:{" "}
+          no high-volatility resources found (threshold:{" "}
           {(threshold * 100).toFixed(0)}%)
         </div>
       )}
@@ -128,21 +128,19 @@ export default function ChurnView({ onSelectKind }: Props) {
                     : e.ratio >= 0.5
                       ? "#b84"
                       : "#666"
-              const kindGuess = guessKind(e.resource)
               return (
                 <tr
                   key={i}
                   style={{
                     borderBottom: "1px solid #eee",
-                    cursor: kindGuess ? "pointer" : "default",
+                    cursor: "pointer",
                   }}
-                  onClick={() => {
-                    if (kindGuess) onSelectKind(kindGuess)
-                  }}
-                  title={kindGuess ? `filter by ${kindGuess}` : undefined}
+                  onClick={() => onSelectKind(e.kind)}
+                  title={`filter by ${e.kind}`}
                 >
                   <td style={{ padding: "5px 12px 5px 0", color: "#333" }}>
-                    {e.resource}
+                    {e.group}/{e.kind}/{e.namespace ? e.namespace + "/" : ""}
+                    {e.name}
                   </td>
                   <td style={{ padding: "5px 12px 5px 0", color: "#666" }}>
                     {e.cluster}
@@ -174,35 +172,4 @@ export default function ChurnView({ onSelectKind }: Props) {
       )}
     </div>
   )
-}
-
-// guessKind maps "apps/deployments" → "Deployment" for common resources.
-// For unknown resources, returns "" (no kind filter applied on click).
-const kindMap: Record<string, string> = {
-  deployments: "Deployment",
-  replicasets: "ReplicaSet",
-  statefulsets: "StatefulSet",
-  daemonsets: "DaemonSet",
-  pods: "Pod",
-  services: "Service",
-  configmaps: "ConfigMap",
-  secrets: "Secret",
-  ingresses: "Ingress",
-  jobs: "Job",
-  cronjobs: "CronJob",
-  persistentvolumeclaims: "PersistentVolumeClaim",
-  persistentvolumes: "PersistentVolume",
-  nodes: "Node",
-  namespaces: "Namespace",
-  serviceaccounts: "ServiceAccount",
-  roles: "Role",
-  clusterroles: "ClusterRole",
-  rolebindings: "RoleBinding",
-  clusterrolebindings: "ClusterRoleBinding",
-}
-
-function guessKind(resource: string): string {
-  const parts = resource.split("/")
-  const res = parts[parts.length - 1].toLowerCase()
-  return kindMap[res] ?? ""
 }

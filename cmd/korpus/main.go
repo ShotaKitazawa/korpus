@@ -20,7 +20,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/ShotaKitazawa/korpus/internal/churn"
 	"github.com/ShotaKitazawa/korpus/internal/config"
 	"github.com/ShotaKitazawa/korpus/internal/discovery"
 	"github.com/ShotaKitazawa/korpus/internal/fetcher"
@@ -182,9 +181,6 @@ func (r *runner) runOnce(ctx context.Context) error {
 	}
 	r.logger.Info("backup committed", "message", msg)
 
-	if err := churn.Analyze(r.workDir, r.cfg.Spec.Churn.Lookback, r.cfg.Spec.Git.SubDir, r.cfg.Spec.Churn.Threshold, r.logger); err != nil {
-		r.logger.Warn("churn analysis", "err", err)
-	}
 	return nil
 }
 

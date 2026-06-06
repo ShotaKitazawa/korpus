@@ -1,12 +1,12 @@
-import type { ResourceMeta } from "../App.tsx"
+import type { SnapshotResource } from "../App.tsx"
 
 interface Props {
-  resources: ResourceMeta[]
+  resources: SnapshotResource[]
   total: number
   offset: number
   limit: number
-  selected: ResourceMeta | null
-  onSelect: (r: ResourceMeta) => void
+  selected: SnapshotResource | null
+  onSelect: (r: SnapshotResource) => void
   onOffsetChange: (offset: number) => void
 }
 

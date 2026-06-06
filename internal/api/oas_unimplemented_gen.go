@@ -13,31 +13,31 @@ type UnimplementedHandler struct{}
 
 var _ Handler = UnimplementedHandler{}
 
-// GetChurn implements GetChurn operation.
+// GetDiff implements GetDiff operation.
 //
-// GET /api/churn
-func (UnimplementedHandler) GetChurn(ctx context.Context, params GetChurnParams) (r []ChurnEntry, _ error) {
+// GET /api/diff
+func (UnimplementedHandler) GetDiff(ctx context.Context, params GetDiffParams) (r GetDiffRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// GetHistory implements GetHistory operation.
+//
+// GET /api/history
+func (UnimplementedHandler) GetHistory(ctx context.Context, params GetHistoryParams) (r *HistoryPage, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
 // GetResource implements GetResource operation.
 //
-// GET /api/resources/{cluster}/{kind}/{namespace}/{name}
+// GET /api/resource
 func (UnimplementedHandler) GetResource(ctx context.Context, params GetResourceParams) (r GetResourceRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
-// GetResourceDiff implements GetResourceDiff operation.
+// GetSnapshot implements GetSnapshot operation.
 //
-// GET /api/resources/{cluster}/{kind}/{namespace}/{name}/diff
-func (UnimplementedHandler) GetResourceDiff(ctx context.Context, params GetResourceDiffParams) (r GetResourceDiffRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// GetResourceHistory implements GetResourceHistory operation.
-//
-// GET /api/resources/{cluster}/{kind}/{namespace}/{name}/history
-func (UnimplementedHandler) GetResourceHistory(ctx context.Context, params GetResourceHistoryParams) (r GetResourceHistoryRes, _ error) {
+// GET /api/snapshot
+func (UnimplementedHandler) GetSnapshot(ctx context.Context, params GetSnapshotParams) (r GetSnapshotRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -45,6 +45,20 @@ func (UnimplementedHandler) GetResourceHistory(ctx context.Context, params GetRe
 //
 // GET /api/status
 func (UnimplementedHandler) GetStatus(ctx context.Context) (r *StatusResponse, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// GetVolatility implements GetVolatility operation.
+//
+// GET /api/volatility
+func (UnimplementedHandler) GetVolatility(ctx context.Context, params GetVolatilityParams) (r *VolatilityPage, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// GetVolatilityFields implements GetVolatilityFields operation.
+//
+// GET /api/volatility/fields
+func (UnimplementedHandler) GetVolatilityFields(ctx context.Context, params GetVolatilityFieldsParams) (r GetVolatilityFieldsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -62,10 +76,17 @@ func (UnimplementedHandler) ListClusters(ctx context.Context) (r []string, _ err
 	return r, ht.ErrNotImplemented
 }
 
+// ListGroups implements ListGroups operation.
+//
+// GET /api/groups
+func (UnimplementedHandler) ListGroups(ctx context.Context, params ListGroupsParams) (r []string, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ListKinds implements ListKinds operation.
 //
 // GET /api/kinds
-func (UnimplementedHandler) ListKinds(ctx context.Context, params ListKindsParams) (r []string, _ error) {
+func (UnimplementedHandler) ListKinds(ctx context.Context, params ListKindsParams) (r []KindInfo, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -73,19 +94,5 @@ func (UnimplementedHandler) ListKinds(ctx context.Context, params ListKindsParam
 //
 // GET /api/namespaces
 func (UnimplementedHandler) ListNamespaces(ctx context.Context, params ListNamespacesParams) (r []string, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// ListResources implements ListResources operation.
-//
-// GET /api/resources
-func (UnimplementedHandler) ListResources(ctx context.Context, params ListResourcesParams) (r *ResourceListPage, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// QueryResources implements QueryResources operation.
-//
-// GET /api/query
-func (UnimplementedHandler) QueryResources(ctx context.Context, params QueryResourcesParams) (r QueryResourcesRes, _ error) {
 	return r, ht.ErrNotImplemented
 }

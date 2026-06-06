@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
-import { api, type DiffResult, type HistoryEntry } from "../api.ts"
-import type { ResourceMeta } from "../App.tsx"
+import { api, type DiffResult, type ChangeEvent } from "../api.ts"
+import type { SnapshotResource } from "../App.tsx"
 
 const colors = {
   key: "#2563eb",
@@ -111,13 +111,13 @@ function YamlHighlight({ text }: { text: string }) {
 }
 
 interface Props {
-  resource: ResourceMeta | null
+  resource: SnapshotResource | null
   yaml: string
 }
 
 export default function ResourceDetail({ resource, yaml }: Props) {
   const [tab, setTab] = useState<"yaml" | "history">("yaml")
-  const [history, setHistory] = useState<HistoryEntry[]>([])
+  const [history, setHistory] = useState<ChangeEvent[]>([])
   const [diff, setDiff] = useState<DiffResult | null>(null)
   const [selectedSHA, setSelectedSHA] = useState("")
 
@@ -130,24 +130,39 @@ export default function ResourceDetail({ resource, yaml }: Props) {
 
   useEffect(() => {
     if (tab !== "history" || !resource) return
-    const { cluster, kind, namespace, name } = resource
+    const { cluster, group, kind, namespace, name } = resource
     api
-      .GET("/api/resources/{cluster}/{kind}/{namespace}/{name}/history", {
-        params: { path: { cluster, kind, namespace, name } },
+      .GET("/api/history", {
+        params: {
+          query: {
+            cluster,
+            group,
+            kind,
+            namespace: namespace || undefined,
+            name,
+          },
+        },
       })
-      .then(({ data }) => setHistory(data ?? []))
+      .then(({ data }) => setHistory(data?.items ?? []))
   }, [tab, resource])
 
   const loadDiff = (sha: string, idx: number) => {
     if (!resource || idx + 1 >= history.length) return
     const prevSHA = history[idx + 1].sha
-    const { cluster, kind, namespace, name } = resource
+    const { cluster, group, kind, namespace, name } = resource
     setSelectedSHA(sha)
     api
-      .GET("/api/resources/{cluster}/{kind}/{namespace}/{name}/diff", {
+      .GET("/api/diff", {
         params: {
-          path: { cluster, kind, namespace, name },
-          query: { from: prevSHA, to: sha },
+          query: {
+            cluster,
+            group,
+            kind,
+            namespace: namespace || undefined,
+            name,
+            from: prevSHA,
+            to: sha,
+          },
         },
       })
       .then(({ data }) => {
@@ -237,7 +252,7 @@ export default function ResourceDetail({ resource, yaml }: Props) {
                     wordBreak: "break-all",
                   }}
                 >
-                  {entry.message.trim()}
+                  {entry.changeType}
                 </div>
                 <div style={{ color: "#999" }}>
                   {new Date(entry.timestamp).toLocaleString()}

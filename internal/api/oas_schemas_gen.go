@@ -5,65 +5,148 @@ package api
 import (
 	"io"
 	"time"
+
+	"github.com/go-faster/errors"
 )
 
-// Ref: #/components/schemas/ChurnEntry
-type ChurnEntry struct {
-	Cluster  string  `json:"cluster"`
-	Resource string  `json:"resource"`
-	Count    int     `json:"count"`
-	Total    int     `json:"total"`
-	Ratio    float64 `json:"ratio"`
+// Ref: #/components/schemas/ChangeEvent
+type ChangeEvent struct {
+	Timestamp  time.Time             `json:"timestamp"`
+	Sha        string                `json:"sha"`
+	Cluster    string                `json:"cluster"`
+	Group      string                `json:"group"`
+	Kind       string                `json:"kind"`
+	Namespace  string                `json:"namespace"`
+	Name       string                `json:"name"`
+	ChangeType ChangeEventChangeType `json:"changeType"`
+}
+
+// GetTimestamp returns the value of Timestamp.
+func (s *ChangeEvent) GetTimestamp() time.Time {
+	return s.Timestamp
+}
+
+// GetSha returns the value of Sha.
+func (s *ChangeEvent) GetSha() string {
+	return s.Sha
 }
 
 // GetCluster returns the value of Cluster.
-func (s *ChurnEntry) GetCluster() string {
+func (s *ChangeEvent) GetCluster() string {
 	return s.Cluster
 }
 
-// GetResource returns the value of Resource.
-func (s *ChurnEntry) GetResource() string {
-	return s.Resource
+// GetGroup returns the value of Group.
+func (s *ChangeEvent) GetGroup() string {
+	return s.Group
 }
 
-// GetCount returns the value of Count.
-func (s *ChurnEntry) GetCount() int {
-	return s.Count
+// GetKind returns the value of Kind.
+func (s *ChangeEvent) GetKind() string {
+	return s.Kind
 }
 
-// GetTotal returns the value of Total.
-func (s *ChurnEntry) GetTotal() int {
-	return s.Total
+// GetNamespace returns the value of Namespace.
+func (s *ChangeEvent) GetNamespace() string {
+	return s.Namespace
 }
 
-// GetRatio returns the value of Ratio.
-func (s *ChurnEntry) GetRatio() float64 {
-	return s.Ratio
+// GetName returns the value of Name.
+func (s *ChangeEvent) GetName() string {
+	return s.Name
+}
+
+// GetChangeType returns the value of ChangeType.
+func (s *ChangeEvent) GetChangeType() ChangeEventChangeType {
+	return s.ChangeType
+}
+
+// SetTimestamp sets the value of Timestamp.
+func (s *ChangeEvent) SetTimestamp(val time.Time) {
+	s.Timestamp = val
+}
+
+// SetSha sets the value of Sha.
+func (s *ChangeEvent) SetSha(val string) {
+	s.Sha = val
 }
 
 // SetCluster sets the value of Cluster.
-func (s *ChurnEntry) SetCluster(val string) {
+func (s *ChangeEvent) SetCluster(val string) {
 	s.Cluster = val
 }
 
-// SetResource sets the value of Resource.
-func (s *ChurnEntry) SetResource(val string) {
-	s.Resource = val
+// SetGroup sets the value of Group.
+func (s *ChangeEvent) SetGroup(val string) {
+	s.Group = val
 }
 
-// SetCount sets the value of Count.
-func (s *ChurnEntry) SetCount(val int) {
-	s.Count = val
+// SetKind sets the value of Kind.
+func (s *ChangeEvent) SetKind(val string) {
+	s.Kind = val
 }
 
-// SetTotal sets the value of Total.
-func (s *ChurnEntry) SetTotal(val int) {
-	s.Total = val
+// SetNamespace sets the value of Namespace.
+func (s *ChangeEvent) SetNamespace(val string) {
+	s.Namespace = val
 }
 
-// SetRatio sets the value of Ratio.
-func (s *ChurnEntry) SetRatio(val float64) {
-	s.Ratio = val
+// SetName sets the value of Name.
+func (s *ChangeEvent) SetName(val string) {
+	s.Name = val
+}
+
+// SetChangeType sets the value of ChangeType.
+func (s *ChangeEvent) SetChangeType(val ChangeEventChangeType) {
+	s.ChangeType = val
+}
+
+type ChangeEventChangeType string
+
+const (
+	ChangeEventChangeTypeAdded    ChangeEventChangeType = "added"
+	ChangeEventChangeTypeModified ChangeEventChangeType = "modified"
+	ChangeEventChangeTypeDeleted  ChangeEventChangeType = "deleted"
+)
+
+// AllValues returns all ChangeEventChangeType values.
+func (ChangeEventChangeType) AllValues() []ChangeEventChangeType {
+	return []ChangeEventChangeType{
+		ChangeEventChangeTypeAdded,
+		ChangeEventChangeTypeModified,
+		ChangeEventChangeTypeDeleted,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ChangeEventChangeType) MarshalText() ([]byte, error) {
+	switch s {
+	case ChangeEventChangeTypeAdded:
+		return []byte(s), nil
+	case ChangeEventChangeTypeModified:
+		return []byte(s), nil
+	case ChangeEventChangeTypeDeleted:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ChangeEventChangeType) UnmarshalText(data []byte) error {
+	switch ChangeEventChangeType(data) {
+	case ChangeEventChangeTypeAdded:
+		*s = ChangeEventChangeTypeAdded
+		return nil
+	case ChangeEventChangeTypeModified:
+		*s = ChangeEventChangeTypeModified
+		return nil
+	case ChangeEventChangeTypeDeleted:
+		*s = ChangeEventChangeTypeDeleted
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Ref: #/components/schemas/ClusterStatus
@@ -140,26 +223,113 @@ func (s *DiffResult) SetAfter(val string) {
 	s.After = val
 }
 
-func (*DiffResult) getResourceDiffRes() {}
+func (*DiffResult) getDiffRes() {}
 
-// GetResourceDiffBadRequest is response for GetResourceDiff operation.
-type GetResourceDiffBadRequest struct{}
+// Ref: #/components/schemas/FieldVolatilityEntry
+type FieldVolatilityEntry struct {
+	Field string  `json:"field"`
+	Count int     `json:"count"`
+	Total int     `json:"total"`
+	Ratio float64 `json:"ratio"`
+}
 
-func (*GetResourceDiffBadRequest) getResourceDiffRes() {}
+// GetField returns the value of Field.
+func (s *FieldVolatilityEntry) GetField() string {
+	return s.Field
+}
 
-// GetResourceDiffNotFound is response for GetResourceDiff operation.
-type GetResourceDiffNotFound struct{}
+// GetCount returns the value of Count.
+func (s *FieldVolatilityEntry) GetCount() int {
+	return s.Count
+}
 
-func (*GetResourceDiffNotFound) getResourceDiffRes() {}
+// GetTotal returns the value of Total.
+func (s *FieldVolatilityEntry) GetTotal() int {
+	return s.Total
+}
 
-// GetResourceHistoryNotFound is response for GetResourceHistory operation.
-type GetResourceHistoryNotFound struct{}
+// GetRatio returns the value of Ratio.
+func (s *FieldVolatilityEntry) GetRatio() float64 {
+	return s.Ratio
+}
 
-func (*GetResourceHistoryNotFound) getResourceHistoryRes() {}
+// SetField sets the value of Field.
+func (s *FieldVolatilityEntry) SetField(val string) {
+	s.Field = val
+}
 
-type GetResourceHistoryOKApplicationJSON []HistoryEntry
+// SetCount sets the value of Count.
+func (s *FieldVolatilityEntry) SetCount(val int) {
+	s.Count = val
+}
 
-func (*GetResourceHistoryOKApplicationJSON) getResourceHistoryRes() {}
+// SetTotal sets the value of Total.
+func (s *FieldVolatilityEntry) SetTotal(val int) {
+	s.Total = val
+}
+
+// SetRatio sets the value of Ratio.
+func (s *FieldVolatilityEntry) SetRatio(val float64) {
+	s.Ratio = val
+}
+
+// GetDiffBadRequest is response for GetDiff operation.
+type GetDiffBadRequest struct{}
+
+func (*GetDiffBadRequest) getDiffRes() {}
+
+// GetDiffNotFound is response for GetDiff operation.
+type GetDiffNotFound struct{}
+
+func (*GetDiffNotFound) getDiffRes() {}
+
+type GetHistoryChangeType string
+
+const (
+	GetHistoryChangeTypeAdded    GetHistoryChangeType = "added"
+	GetHistoryChangeTypeModified GetHistoryChangeType = "modified"
+	GetHistoryChangeTypeDeleted  GetHistoryChangeType = "deleted"
+)
+
+// AllValues returns all GetHistoryChangeType values.
+func (GetHistoryChangeType) AllValues() []GetHistoryChangeType {
+	return []GetHistoryChangeType{
+		GetHistoryChangeTypeAdded,
+		GetHistoryChangeTypeModified,
+		GetHistoryChangeTypeDeleted,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s GetHistoryChangeType) MarshalText() ([]byte, error) {
+	switch s {
+	case GetHistoryChangeTypeAdded:
+		return []byte(s), nil
+	case GetHistoryChangeTypeModified:
+		return []byte(s), nil
+	case GetHistoryChangeTypeDeleted:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *GetHistoryChangeType) UnmarshalText(data []byte) error {
+	switch GetHistoryChangeType(data) {
+	case GetHistoryChangeTypeAdded:
+		*s = GetHistoryChangeTypeAdded
+		return nil
+	case GetHistoryChangeTypeModified:
+		*s = GetHistoryChangeTypeModified
+		return nil
+	case GetHistoryChangeTypeDeleted:
+		*s = GetHistoryChangeTypeDeleted
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
 
 // GetResourceNotFound is response for GetResource operation.
 type GetResourceNotFound struct{}
@@ -182,6 +352,20 @@ func (s GetResourceOK) Read(p []byte) (n int, err error) {
 
 func (*GetResourceOK) getResourceRes() {}
 
+// GetSnapshotBadRequest is response for GetSnapshot operation.
+type GetSnapshotBadRequest struct{}
+
+func (*GetSnapshotBadRequest) getSnapshotRes() {}
+
+// GetVolatilityFieldsBadRequest is response for GetVolatilityFields operation.
+type GetVolatilityFieldsBadRequest struct{}
+
+func (*GetVolatilityFieldsBadRequest) getVolatilityFieldsRes() {}
+
+type GetVolatilityFieldsOKApplicationJSON []FieldVolatilityEntry
+
+func (*GetVolatilityFieldsOKApplicationJSON) getVolatilityFieldsRes() {}
+
 // HealthzOK is response for Healthz operation.
 type HealthzOK struct{}
 
@@ -192,41 +376,124 @@ type HealthzServiceUnavailable struct{}
 
 func (*HealthzServiceUnavailable) healthzRes() {}
 
-// Ref: #/components/schemas/HistoryEntry
-type HistoryEntry struct {
-	Sha       string    `json:"sha"`
-	Timestamp time.Time `json:"timestamp"`
-	Message   string    `json:"message"`
+// Ref: #/components/schemas/HistoryPage
+type HistoryPage struct {
+	Items  []ChangeEvent `json:"items"`
+	Total  int           `json:"total"`
+	Offset int           `json:"offset"`
+	Limit  int           `json:"limit"`
 }
 
-// GetSha returns the value of Sha.
-func (s *HistoryEntry) GetSha() string {
-	return s.Sha
+// GetItems returns the value of Items.
+func (s *HistoryPage) GetItems() []ChangeEvent {
+	return s.Items
 }
 
-// GetTimestamp returns the value of Timestamp.
-func (s *HistoryEntry) GetTimestamp() time.Time {
-	return s.Timestamp
+// GetTotal returns the value of Total.
+func (s *HistoryPage) GetTotal() int {
+	return s.Total
 }
 
-// GetMessage returns the value of Message.
-func (s *HistoryEntry) GetMessage() string {
-	return s.Message
+// GetOffset returns the value of Offset.
+func (s *HistoryPage) GetOffset() int {
+	return s.Offset
 }
 
-// SetSha sets the value of Sha.
-func (s *HistoryEntry) SetSha(val string) {
-	s.Sha = val
+// GetLimit returns the value of Limit.
+func (s *HistoryPage) GetLimit() int {
+	return s.Limit
 }
 
-// SetTimestamp sets the value of Timestamp.
-func (s *HistoryEntry) SetTimestamp(val time.Time) {
-	s.Timestamp = val
+// SetItems sets the value of Items.
+func (s *HistoryPage) SetItems(val []ChangeEvent) {
+	s.Items = val
 }
 
-// SetMessage sets the value of Message.
-func (s *HistoryEntry) SetMessage(val string) {
-	s.Message = val
+// SetTotal sets the value of Total.
+func (s *HistoryPage) SetTotal(val int) {
+	s.Total = val
+}
+
+// SetOffset sets the value of Offset.
+func (s *HistoryPage) SetOffset(val int) {
+	s.Offset = val
+}
+
+// SetLimit sets the value of Limit.
+func (s *HistoryPage) SetLimit(val int) {
+	s.Limit = val
+}
+
+// Ref: #/components/schemas/KindInfo
+type KindInfo struct {
+	Group string `json:"group"`
+	Kind  string `json:"kind"`
+}
+
+// GetGroup returns the value of Group.
+func (s *KindInfo) GetGroup() string {
+	return s.Group
+}
+
+// GetKind returns the value of Kind.
+func (s *KindInfo) GetKind() string {
+	return s.Kind
+}
+
+// SetGroup sets the value of Group.
+func (s *KindInfo) SetGroup(val string) {
+	s.Group = val
+}
+
+// SetKind sets the value of Kind.
+func (s *KindInfo) SetKind(val string) {
+	s.Kind = val
+}
+
+// NewOptDateTime returns new OptDateTime with value set to v.
+func NewOptDateTime(v time.Time) OptDateTime {
+	return OptDateTime{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptDateTime is optional time.Time.
+type OptDateTime struct {
+	Value time.Time
+	Set   bool
+}
+
+// IsSet returns true if OptDateTime was set.
+func (o OptDateTime) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptDateTime) Reset() {
+	var v time.Time
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptDateTime) SetTo(v time.Time) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptDateTime) Get() (v time.Time, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptDateTime) Or(d time.Time) time.Time {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
 }
 
 // NewOptFloat64 returns new OptFloat64 with value set to v.
@@ -269,6 +536,52 @@ func (o OptFloat64) Get() (v float64, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptFloat64) Or(d float64) float64 {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptGetHistoryChangeType returns new OptGetHistoryChangeType with value set to v.
+func NewOptGetHistoryChangeType(v GetHistoryChangeType) OptGetHistoryChangeType {
+	return OptGetHistoryChangeType{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptGetHistoryChangeType is optional GetHistoryChangeType.
+type OptGetHistoryChangeType struct {
+	Value GetHistoryChangeType
+	Set   bool
+}
+
+// IsSet returns true if OptGetHistoryChangeType was set.
+func (o OptGetHistoryChangeType) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptGetHistoryChangeType) Reset() {
+	var v GetHistoryChangeType
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptGetHistoryChangeType) SetTo(v GetHistoryChangeType) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptGetHistoryChangeType) Get() (v GetHistoryChangeType, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptGetHistoryChangeType) Or(d GetHistoryChangeType) GetHistoryChangeType {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -384,52 +697,52 @@ func (o OptNilDateTime) Or(d time.Time) time.Time {
 	return d
 }
 
-// NewOptNilResourceMetaLabels returns new OptNilResourceMetaLabels with value set to v.
-func NewOptNilResourceMetaLabels(v ResourceMetaLabels) OptNilResourceMetaLabels {
-	return OptNilResourceMetaLabels{
+// NewOptNilSnapshotResourceLabels returns new OptNilSnapshotResourceLabels with value set to v.
+func NewOptNilSnapshotResourceLabels(v SnapshotResourceLabels) OptNilSnapshotResourceLabels {
+	return OptNilSnapshotResourceLabels{
 		Value: v,
 		Set:   true,
 	}
 }
 
-// OptNilResourceMetaLabels is optional nullable ResourceMetaLabels.
-type OptNilResourceMetaLabels struct {
-	Value ResourceMetaLabels
+// OptNilSnapshotResourceLabels is optional nullable SnapshotResourceLabels.
+type OptNilSnapshotResourceLabels struct {
+	Value SnapshotResourceLabels
 	Set   bool
 	Null  bool
 }
 
-// IsSet returns true if OptNilResourceMetaLabels was set.
-func (o OptNilResourceMetaLabels) IsSet() bool { return o.Set }
+// IsSet returns true if OptNilSnapshotResourceLabels was set.
+func (o OptNilSnapshotResourceLabels) IsSet() bool { return o.Set }
 
 // Reset unsets value.
-func (o *OptNilResourceMetaLabels) Reset() {
-	var v ResourceMetaLabels
+func (o *OptNilSnapshotResourceLabels) Reset() {
+	var v SnapshotResourceLabels
 	o.Value = v
 	o.Set = false
 	o.Null = false
 }
 
 // SetTo sets value to v.
-func (o *OptNilResourceMetaLabels) SetTo(v ResourceMetaLabels) {
+func (o *OptNilSnapshotResourceLabels) SetTo(v SnapshotResourceLabels) {
 	o.Set = true
 	o.Null = false
 	o.Value = v
 }
 
 // IsNull returns true if value is Null.
-func (o OptNilResourceMetaLabels) IsNull() bool { return o.Null }
+func (o OptNilSnapshotResourceLabels) IsNull() bool { return o.Null }
 
 // SetToNull sets value to null.
-func (o *OptNilResourceMetaLabels) SetToNull() {
+func (o *OptNilSnapshotResourceLabels) SetToNull() {
 	o.Set = true
 	o.Null = true
-	var v ResourceMetaLabels
+	var v SnapshotResourceLabels
 	o.Value = v
 }
 
 // Get returns value and boolean that denotes whether value was set.
-func (o OptNilResourceMetaLabels) Get() (v ResourceMetaLabels, ok bool) {
+func (o OptNilSnapshotResourceLabels) Get() (v SnapshotResourceLabels, ok bool) {
 	if o.Null {
 		return v, false
 	}
@@ -440,7 +753,70 @@ func (o OptNilResourceMetaLabels) Get() (v ResourceMetaLabels, ok bool) {
 }
 
 // Or returns value if set, or given parameter if does not.
-func (o OptNilResourceMetaLabels) Or(d ResourceMetaLabels) ResourceMetaLabels {
+func (o OptNilSnapshotResourceLabels) Or(d SnapshotResourceLabels) SnapshotResourceLabels {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilString returns new OptNilString with value set to v.
+func NewOptNilString(v string) OptNilString {
+	return OptNilString{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilString is optional nullable string.
+type OptNilString struct {
+	Value string
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilString was set.
+func (o OptNilString) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilString) Reset() {
+	var v string
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilString) SetTo(v string) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilString) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilString) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v string
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilString) Get() (v string, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilString) Or(d string) string {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -493,134 +869,162 @@ func (o OptString) Or(d string) string {
 	return d
 }
 
-// QueryResourcesBadRequest is response for QueryResources operation.
-type QueryResourcesBadRequest struct{}
-
-func (*QueryResourcesBadRequest) queryResourcesRes() {}
-
-// Ref: #/components/schemas/ResourceListPage
-type ResourceListPage struct {
-	Items  []ResourceMeta `json:"items"`
-	Total  int            `json:"total"`
-	Offset int            `json:"offset"`
-	Limit  int            `json:"limit"`
+// Ref: #/components/schemas/SnapshotPage
+type SnapshotPage struct {
+	Items      []SnapshotResource `json:"items"`
+	Total      int                `json:"total"`
+	Offset     int                `json:"offset"`
+	Limit      int                `json:"limit"`
+	CommitSha  OptNilString       `json:"commitSha"`
+	CommitTime OptNilDateTime     `json:"commitTime"`
 }
 
 // GetItems returns the value of Items.
-func (s *ResourceListPage) GetItems() []ResourceMeta {
+func (s *SnapshotPage) GetItems() []SnapshotResource {
 	return s.Items
 }
 
 // GetTotal returns the value of Total.
-func (s *ResourceListPage) GetTotal() int {
+func (s *SnapshotPage) GetTotal() int {
 	return s.Total
 }
 
 // GetOffset returns the value of Offset.
-func (s *ResourceListPage) GetOffset() int {
+func (s *SnapshotPage) GetOffset() int {
 	return s.Offset
 }
 
 // GetLimit returns the value of Limit.
-func (s *ResourceListPage) GetLimit() int {
+func (s *SnapshotPage) GetLimit() int {
 	return s.Limit
 }
 
+// GetCommitSha returns the value of CommitSha.
+func (s *SnapshotPage) GetCommitSha() OptNilString {
+	return s.CommitSha
+}
+
+// GetCommitTime returns the value of CommitTime.
+func (s *SnapshotPage) GetCommitTime() OptNilDateTime {
+	return s.CommitTime
+}
+
 // SetItems sets the value of Items.
-func (s *ResourceListPage) SetItems(val []ResourceMeta) {
+func (s *SnapshotPage) SetItems(val []SnapshotResource) {
 	s.Items = val
 }
 
 // SetTotal sets the value of Total.
-func (s *ResourceListPage) SetTotal(val int) {
+func (s *SnapshotPage) SetTotal(val int) {
 	s.Total = val
 }
 
 // SetOffset sets the value of Offset.
-func (s *ResourceListPage) SetOffset(val int) {
+func (s *SnapshotPage) SetOffset(val int) {
 	s.Offset = val
 }
 
 // SetLimit sets the value of Limit.
-func (s *ResourceListPage) SetLimit(val int) {
+func (s *SnapshotPage) SetLimit(val int) {
 	s.Limit = val
 }
 
-func (*ResourceListPage) queryResourcesRes() {}
+// SetCommitSha sets the value of CommitSha.
+func (s *SnapshotPage) SetCommitSha(val OptNilString) {
+	s.CommitSha = val
+}
 
-// Ref: #/components/schemas/ResourceMeta
-type ResourceMeta struct {
-	Cluster           string                   `json:"cluster"`
-	Kind              string                   `json:"kind"`
-	Name              string                   `json:"name"`
-	Namespace         string                   `json:"namespace"`
-	Labels            OptNilResourceMetaLabels `json:"labels"`
-	CreationTimestamp OptString                `json:"creationTimestamp"`
+// SetCommitTime sets the value of CommitTime.
+func (s *SnapshotPage) SetCommitTime(val OptNilDateTime) {
+	s.CommitTime = val
+}
+
+func (*SnapshotPage) getSnapshotRes() {}
+
+// Ref: #/components/schemas/SnapshotResource
+type SnapshotResource struct {
+	Cluster           string                       `json:"cluster"`
+	Group             string                       `json:"group"`
+	Kind              string                       `json:"kind"`
+	Name              string                       `json:"name"`
+	Namespace         string                       `json:"namespace"`
+	Labels            OptNilSnapshotResourceLabels `json:"labels"`
+	CreationTimestamp OptString                    `json:"creationTimestamp"`
 }
 
 // GetCluster returns the value of Cluster.
-func (s *ResourceMeta) GetCluster() string {
+func (s *SnapshotResource) GetCluster() string {
 	return s.Cluster
 }
 
+// GetGroup returns the value of Group.
+func (s *SnapshotResource) GetGroup() string {
+	return s.Group
+}
+
 // GetKind returns the value of Kind.
-func (s *ResourceMeta) GetKind() string {
+func (s *SnapshotResource) GetKind() string {
 	return s.Kind
 }
 
 // GetName returns the value of Name.
-func (s *ResourceMeta) GetName() string {
+func (s *SnapshotResource) GetName() string {
 	return s.Name
 }
 
 // GetNamespace returns the value of Namespace.
-func (s *ResourceMeta) GetNamespace() string {
+func (s *SnapshotResource) GetNamespace() string {
 	return s.Namespace
 }
 
 // GetLabels returns the value of Labels.
-func (s *ResourceMeta) GetLabels() OptNilResourceMetaLabels {
+func (s *SnapshotResource) GetLabels() OptNilSnapshotResourceLabels {
 	return s.Labels
 }
 
 // GetCreationTimestamp returns the value of CreationTimestamp.
-func (s *ResourceMeta) GetCreationTimestamp() OptString {
+func (s *SnapshotResource) GetCreationTimestamp() OptString {
 	return s.CreationTimestamp
 }
 
 // SetCluster sets the value of Cluster.
-func (s *ResourceMeta) SetCluster(val string) {
+func (s *SnapshotResource) SetCluster(val string) {
 	s.Cluster = val
 }
 
+// SetGroup sets the value of Group.
+func (s *SnapshotResource) SetGroup(val string) {
+	s.Group = val
+}
+
 // SetKind sets the value of Kind.
-func (s *ResourceMeta) SetKind(val string) {
+func (s *SnapshotResource) SetKind(val string) {
 	s.Kind = val
 }
 
 // SetName sets the value of Name.
-func (s *ResourceMeta) SetName(val string) {
+func (s *SnapshotResource) SetName(val string) {
 	s.Name = val
 }
 
 // SetNamespace sets the value of Namespace.
-func (s *ResourceMeta) SetNamespace(val string) {
+func (s *SnapshotResource) SetNamespace(val string) {
 	s.Namespace = val
 }
 
 // SetLabels sets the value of Labels.
-func (s *ResourceMeta) SetLabels(val OptNilResourceMetaLabels) {
+func (s *SnapshotResource) SetLabels(val OptNilSnapshotResourceLabels) {
 	s.Labels = val
 }
 
 // SetCreationTimestamp sets the value of CreationTimestamp.
-func (s *ResourceMeta) SetCreationTimestamp(val OptString) {
+func (s *SnapshotResource) SetCreationTimestamp(val OptString) {
 	s.CreationTimestamp = val
 }
 
-type ResourceMetaLabels map[string]string
+type SnapshotResourceLabels map[string]string
 
-func (s *ResourceMetaLabels) init() ResourceMetaLabels {
+func (s *SnapshotResourceLabels) init() SnapshotResourceLabels {
 	m := *s
 	if m == nil {
 		m = map[string]string{}
@@ -642,4 +1046,144 @@ func (s *StatusResponse) GetClusters() []ClusterStatus {
 // SetClusters sets the value of Clusters.
 func (s *StatusResponse) SetClusters(val []ClusterStatus) {
 	s.Clusters = val
+}
+
+// Ref: #/components/schemas/VolatilityEntry
+type VolatilityEntry struct {
+	Cluster   string  `json:"cluster"`
+	Group     string  `json:"group"`
+	Kind      string  `json:"kind"`
+	Namespace string  `json:"namespace"`
+	Name      string  `json:"name"`
+	Count     int     `json:"count"`
+	Total     int     `json:"total"`
+	Ratio     float64 `json:"ratio"`
+}
+
+// GetCluster returns the value of Cluster.
+func (s *VolatilityEntry) GetCluster() string {
+	return s.Cluster
+}
+
+// GetGroup returns the value of Group.
+func (s *VolatilityEntry) GetGroup() string {
+	return s.Group
+}
+
+// GetKind returns the value of Kind.
+func (s *VolatilityEntry) GetKind() string {
+	return s.Kind
+}
+
+// GetNamespace returns the value of Namespace.
+func (s *VolatilityEntry) GetNamespace() string {
+	return s.Namespace
+}
+
+// GetName returns the value of Name.
+func (s *VolatilityEntry) GetName() string {
+	return s.Name
+}
+
+// GetCount returns the value of Count.
+func (s *VolatilityEntry) GetCount() int {
+	return s.Count
+}
+
+// GetTotal returns the value of Total.
+func (s *VolatilityEntry) GetTotal() int {
+	return s.Total
+}
+
+// GetRatio returns the value of Ratio.
+func (s *VolatilityEntry) GetRatio() float64 {
+	return s.Ratio
+}
+
+// SetCluster sets the value of Cluster.
+func (s *VolatilityEntry) SetCluster(val string) {
+	s.Cluster = val
+}
+
+// SetGroup sets the value of Group.
+func (s *VolatilityEntry) SetGroup(val string) {
+	s.Group = val
+}
+
+// SetKind sets the value of Kind.
+func (s *VolatilityEntry) SetKind(val string) {
+	s.Kind = val
+}
+
+// SetNamespace sets the value of Namespace.
+func (s *VolatilityEntry) SetNamespace(val string) {
+	s.Namespace = val
+}
+
+// SetName sets the value of Name.
+func (s *VolatilityEntry) SetName(val string) {
+	s.Name = val
+}
+
+// SetCount sets the value of Count.
+func (s *VolatilityEntry) SetCount(val int) {
+	s.Count = val
+}
+
+// SetTotal sets the value of Total.
+func (s *VolatilityEntry) SetTotal(val int) {
+	s.Total = val
+}
+
+// SetRatio sets the value of Ratio.
+func (s *VolatilityEntry) SetRatio(val float64) {
+	s.Ratio = val
+}
+
+// Ref: #/components/schemas/VolatilityPage
+type VolatilityPage struct {
+	Items  []VolatilityEntry `json:"items"`
+	Total  int               `json:"total"`
+	Offset int               `json:"offset"`
+	Limit  int               `json:"limit"`
+}
+
+// GetItems returns the value of Items.
+func (s *VolatilityPage) GetItems() []VolatilityEntry {
+	return s.Items
+}
+
+// GetTotal returns the value of Total.
+func (s *VolatilityPage) GetTotal() int {
+	return s.Total
+}
+
+// GetOffset returns the value of Offset.
+func (s *VolatilityPage) GetOffset() int {
+	return s.Offset
+}
+
+// GetLimit returns the value of Limit.
+func (s *VolatilityPage) GetLimit() int {
+	return s.Limit
+}
+
+// SetItems sets the value of Items.
+func (s *VolatilityPage) SetItems(val []VolatilityEntry) {
+	s.Items = val
+}
+
+// SetTotal sets the value of Total.
+func (s *VolatilityPage) SetTotal(val int) {
+	s.Total = val
+}
+
+// SetOffset sets the value of Offset.
+func (s *VolatilityPage) SetOffset(val int) {
+	s.Offset = val
+}
+
+// SetLimit sets the value of Limit.
+func (s *VolatilityPage) SetLimit(val int) {
+	s.Limit = val
 }

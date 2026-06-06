@@ -14,9 +14,16 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+// KindInfo pairs an API group with a resource kind.
+type KindInfo struct {
+	Group string `json:"group"`
+	Kind  string `json:"kind"`
+}
+
 // ResourceMeta holds the identifying metadata of a single K8s resource.
 type ResourceMeta struct {
 	Cluster           string            `json:"cluster"`
+	Group             string            `json:"group"`
 	Kind              string            `json:"kind"`
 	Name              string            `json:"name"`
 	Namespace         string            `json:"namespace"`
@@ -33,16 +40,19 @@ type Index struct {
 	resources []ResourceMeta
 	fields    []string
 	celEnv    *cel.Env
-	celCache  sync.Map // key: expr string, value: cel.Program
+	celCache  sync.Map
 }
 
-// New returns an empty Index for the given cluster, configured to index the given fields.
+// New returns an empty Index for the given cluster.
 func New(cluster string, fields []string) *Index {
 	env, _ := cel.NewEnv(cel.Variable("object", cel.DynType))
 	return &Index{cluster: cluster, fields: fields, celEnv: env}
 }
 
 // Build walks dir, parses every .yaml file, and rebuilds the index.
+// Group is extracted from the first path component relative to dir
+// (e.g. dir/apps/v1/namespaces/default/pods/mypod.yaml → group "apps").
+// Falls back to parsing apiVersion when path structure is not recognisable.
 func (idx *Index) Build(dir string) error {
 	var result []ResourceMeta
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
@@ -87,6 +97,11 @@ func (idx *Index) Build(dir string) error {
 				labels = nil
 			}
 
+			group := groupFromPath(path, dir)
+			if group == "" {
+				group = groupFromAPIVersion(raw)
+			}
+
 			indexedFields := make(map[string]any, len(idx.fields))
 			for _, field := range idx.fields {
 				if v := getNestedField(raw, field); v != nil {
@@ -96,6 +111,7 @@ func (idx *Index) Build(dir string) error {
 
 			result = append(result, ResourceMeta{
 				Cluster:           idx.cluster,
+				Group:             group,
 				Kind:              kind,
 				Name:              name,
 				Namespace:         namespace,
@@ -117,22 +133,74 @@ func (idx *Index) Build(dir string) error {
 	return nil
 }
 
-// Kinds returns the sorted unique list of resource kinds in the index, optionally filtered by namespace.
-func (idx *Index) Kinds(namespace string) []string {
+// groupFromPath extracts the API group from the first path component relative to dir.
+func groupFromPath(absPath, dir string) string {
+	rel := strings.TrimPrefix(filepath.ToSlash(absPath), filepath.ToSlash(dir)+"/")
+	if rel == filepath.ToSlash(absPath) {
+		return ""
+	}
+	parts := strings.SplitN(rel, "/", 2)
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[0]
+}
+
+// groupFromAPIVersion derives a group string from the YAML apiVersion field.
+// "v1" → "core"; "apps/v1" → "apps"; anything else → split on last "/".
+func groupFromAPIVersion(raw map[string]any) string {
+	av, _ := raw["apiVersion"].(string)
+	if av == "" {
+		return ""
+	}
+	if !strings.Contains(av, "/") {
+		return "core"
+	}
+	return av[:strings.LastIndex(av, "/")]
+}
+
+// Groups returns the sorted unique list of API groups in the index.
+func (idx *Index) Groups() []string {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	seen := make(map[string]struct{})
 	for _, r := range idx.resources {
+		seen[r.Group] = struct{}{}
+	}
+	result := make([]string, 0, len(seen))
+	for g := range seen {
+		result = append(result, g)
+	}
+	sort.Strings(result)
+	return result
+}
+
+// Kinds returns the sorted unique list of KindInfo in the index,
+// optionally filtered by namespace and/or group.
+func (idx *Index) Kinds(namespace, group string) []KindInfo {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	type key struct{ g, k string }
+	seen := make(map[key]struct{})
+	for _, r := range idx.resources {
 		if namespace != "" && r.Namespace != namespace {
 			continue
 		}
-		seen[r.Kind] = struct{}{}
+		if group != "" && !strings.EqualFold(r.Group, group) {
+			continue
+		}
+		seen[key{r.Group, r.Kind}] = struct{}{}
 	}
-	result := make([]string, 0, len(seen))
+	result := make([]KindInfo, 0, len(seen))
 	for k := range seen {
-		result = append(result, k)
+		result = append(result, KindInfo{Group: k.g, Kind: k.k})
 	}
-	sort.Strings(result)
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Group != result[j].Group {
+			return result[i].Group < result[j].Group
+		}
+		return result[i].Kind < result[j].Kind
+	})
 	return result
 }
 
@@ -150,15 +218,20 @@ func (idx *Index) Namespaces() []string {
 	for ns := range seen {
 		result = append(result, ns)
 	}
+	sort.Strings(result)
 	return result
 }
 
-// List returns resources matching kind, namespace, and/or labels. Empty string / nil means "any".
-func (idx *Index) List(kind, namespace string, labelSel map[string]string) []ResourceMeta {
+// List returns resources matching group, kind, namespace, and/or labels.
+// Empty string / nil means "any".
+func (idx *Index) List(group, kind, namespace string, labelSel map[string]string) []ResourceMeta {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	var result []ResourceMeta
 	for _, r := range idx.resources {
+		if group != "" && !strings.EqualFold(r.Group, group) {
+			continue
+		}
 		if kind != "" && !strings.EqualFold(r.Kind, kind) {
 			continue
 		}
@@ -173,7 +246,6 @@ func (idx *Index) List(kind, namespace string, labelSel map[string]string) []Res
 	return result
 }
 
-// matchLabels returns true when all entries in sel are present (and equal, if value non-empty) in labels.
 func matchLabels(labels map[string]string, sel map[string]string) bool {
 	for k, v := range sel {
 		got, ok := labels[k]
@@ -187,19 +259,16 @@ func matchLabels(labels map[string]string, sel map[string]string) bool {
 	return true
 }
 
-// Query evaluates a CEL expression against resources of the given kind.
-// kind is required. namespace and labelSel are optional pre-filters.
-// expr is a CEL expression where "object" refers to the resource document.
-// If expr is empty, all matching resources are returned.
-func (idx *Index) Query(kind, namespace string, labelSel map[string]string, expr string) ([]ResourceMeta, error) {
-	if kind == "" {
-		return nil, fmt.Errorf("kind is required")
-	}
-
+// Query evaluates a CEL expression against resources, optionally filtered by group/kind/namespace.
+// kind is required when expr is non-empty; otherwise kind may be empty.
+func (idx *Index) Query(group, kind, namespace string, labelSel map[string]string, expr string) ([]ResourceMeta, error) {
 	idx.mu.RLock()
 	candidates := make([]ResourceMeta, 0)
 	for _, r := range idx.resources {
-		if !strings.EqualFold(r.Kind, kind) {
+		if group != "" && !strings.EqualFold(r.Group, group) {
+			continue
+		}
+		if kind != "" && !strings.EqualFold(r.Kind, kind) {
 			continue
 		}
 		if namespace != "" && r.Namespace != namespace {
@@ -234,11 +303,14 @@ func (idx *Index) Query(kind, namespace string, labelSel map[string]string, expr
 	return result, nil
 }
 
-// Get returns the ResourceMeta for the given kind/namespace/name, if present.
-func (idx *Index) Get(kind, namespace, name string) (ResourceMeta, bool) {
+// Get returns the ResourceMeta for the given group/kind/namespace/name, if present.
+func (idx *Index) Get(group, kind, namespace, name string) (ResourceMeta, bool) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	for _, r := range idx.resources {
+		if group != "" && !strings.EqualFold(r.Group, group) {
+			continue
+		}
 		if strings.EqualFold(r.Kind, kind) && r.Namespace == namespace && r.Name == name {
 			return r, true
 		}
@@ -278,7 +350,6 @@ func (idx *Index) evalResource(prog cel.Program, r ResourceMeta) (bool, error) {
 	}
 
 	if needsFallback {
-		// Indexed fields insufficient — fall back to full document on disk.
 		full, err := loadFullDoc(r)
 		if err != nil {
 			return false, fmt.Errorf("load full doc: %w", err)
@@ -294,7 +365,6 @@ func (idx *Index) evalResource(prog cel.Program, r ResourceMeta) (bool, error) {
 	return out == types.True, nil
 }
 
-// buildObjectMap constructs the CEL activation map from indexed fields + core fields.
 func buildObjectMap(r ResourceMeta) map[string]any {
 	doc := map[string]any{
 		"kind": r.Kind,
@@ -309,7 +379,6 @@ func buildObjectMap(r ResourceMeta) map[string]any {
 	return doc
 }
 
-// setNestedField sets value at the dot-separated path within m, creating intermediate maps as needed.
 func setNestedField(m map[string]any, path string, value any) {
 	parts := strings.SplitN(path, ".", 2)
 	if len(parts) == 1 {
@@ -324,7 +393,6 @@ func setNestedField(m map[string]any, path string, value any) {
 	setNestedField(child, parts[1], value)
 }
 
-// getNestedField retrieves the value at a dot-separated path from a nested map.
 func getNestedField(m map[string]any, path string) any {
 	parts := strings.SplitN(path, ".", 2)
 	v, ok := m[parts[0]]
@@ -341,7 +409,6 @@ func getNestedField(m map[string]any, path string) any {
 	return getNestedField(child, parts[1])
 }
 
-// loadFullDoc reads FilePath and returns the YAML document matching r's kind/name/namespace.
 func loadFullDoc(r ResourceMeta) (map[string]any, error) {
 	data, err := os.ReadFile(r.FilePath)
 	if err != nil {
@@ -366,7 +433,6 @@ func loadFullDoc(r ResourceMeta) (map[string]any, error) {
 	return nil, fmt.Errorf("document not found in %s", r.FilePath)
 }
 
-// splitYAMLDocs splits a byte slice on "---" document separators.
 func splitYAMLDocs(data []byte) [][]byte {
 	var docs [][]byte
 	for _, part := range strings.Split(string(data), "\n---") {

@@ -1,7 +1,7 @@
 openapi: "3.1.0"
 info:
   title: korpus
-  version: "1.0.0"
+  version: "2.0.0"
 
 paths:
   /healthz:
@@ -37,15 +37,11 @@ paths:
                 items:
                   type: string
 
-  /api/kinds:
+  /api/groups:
     get:
-      operationId: ListKinds
+      operationId: ListGroups
       parameters:
         - name: cluster
-          in: query
-          schema:
-            type: string
-        - name: namespace
           in: query
           schema:
             type: string
@@ -77,15 +73,15 @@ paths:
                 items:
                   type: string
 
-  /api/resources:
+  /api/kinds:
     get:
-      operationId: ListResources
+      operationId: ListKinds
       parameters:
         - name: cluster
           in: query
           schema:
             type: string
-        - name: kind
+        - name: group
           in: query
           schema:
             type: string
@@ -93,49 +89,41 @@ paths:
           in: query
           schema:
             type: string
-        - name: labels
-          in: query
-          schema:
-            type: string
-        - name: offset
-          in: query
-          schema:
-            type: integer
-            default: 0
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 50
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ResourceListPage"
+                type: array
+                items:
+                  $ref: "#/components/schemas/KindInfo"
 
-  /api/resources/{cluster}/{kind}/{namespace}/{name}:
+  /api/resource:
     get:
       operationId: GetResource
       parameters:
         - name: cluster
-          in: path
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: group
+          in: query
           required: true
           schema:
             type: string
         - name: kind
-          in: path
+          in: query
           required: true
           schema:
             type: string
         - name: namespace
-          in: path
-          required: true
+          in: query
           schema:
             type: string
         - name: name
-          in: path
+          in: query
           required: true
           schema:
             type: string
@@ -149,68 +137,31 @@ paths:
         "404":
           description: Not Found
 
-  /api/resources/{cluster}/{kind}/{namespace}/{name}/history:
+  /api/diff:
     get:
-      operationId: GetResourceHistory
+      operationId: GetDiff
       parameters:
         - name: cluster
-          in: path
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: group
+          in: query
           required: true
           schema:
             type: string
         - name: kind
-          in: path
+          in: query
           required: true
           schema:
             type: string
         - name: namespace
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: name
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: n
           in: query
           schema:
-            type: integer
-            default: 20
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/HistoryEntry"
-        "404":
-          description: Not Found
-
-  /api/resources/{cluster}/{kind}/{namespace}/{name}/diff:
-    get:
-      operationId: GetResourceDiff
-      parameters:
-        - name: cluster
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: kind
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: namespace
-          in: path
-          required: true
-          schema:
             type: string
         - name: name
-          in: path
+          in: query
           required: true
           schema:
             type: string
@@ -236,10 +187,182 @@ paths:
         "404":
           description: Not Found
 
-  /api/query:
+  /api/snapshot:
     get:
-      operationId: QueryResources
+      operationId: GetSnapshot
       parameters:
+        - name: datetime
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: cluster
+          in: query
+          schema:
+            type: string
+        - name: group
+          in: query
+          schema:
+            type: string
+        - name: kind
+          in: query
+          schema:
+            type: string
+        - name: namespace
+          in: query
+          schema:
+            type: string
+        - name: name
+          in: query
+          schema:
+            type: string
+        - name: cel
+          in: query
+          description: CEL expression (only valid when datetime is omitted)
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SnapshotPage"
+        "400":
+          description: Bad Request (e.g. cel combined with datetime)
+
+  /api/history:
+    get:
+      operationId: GetHistory
+      parameters:
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: until
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: cluster
+          in: query
+          schema:
+            type: string
+        - name: group
+          in: query
+          schema:
+            type: string
+        - name: kind
+          in: query
+          schema:
+            type: string
+        - name: namespace
+          in: query
+          schema:
+            type: string
+        - name: name
+          in: query
+          schema:
+            type: string
+        - name: changeType
+          in: query
+          schema:
+            type: string
+            enum: [added, modified, deleted]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HistoryPage"
+
+  /api/volatility:
+    get:
+      operationId: GetVolatility
+      parameters:
+        - name: cluster
+          in: query
+          schema:
+            type: string
+        - name: group
+          in: query
+          schema:
+            type: string
+        - name: kind
+          in: query
+          schema:
+            type: string
+        - name: namespace
+          in: query
+          schema:
+            type: string
+        - name: name
+          in: query
+          schema:
+            type: string
+        - name: commits
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: threshold
+          in: query
+          schema:
+            type: number
+            default: 0.0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VolatilityPage"
+
+  /api/volatility/fields:
+    get:
+      operationId: GetVolatilityFields
+      parameters:
+        - name: cluster
+          in: query
+          schema:
+            type: string
+        - name: group
+          in: query
+          required: true
+          schema:
+            type: string
         - name: kind
           in: query
           required: true
@@ -249,56 +372,15 @@ paths:
           in: query
           schema:
             type: string
-        - name: cluster
+        - name: name
           in: query
           schema:
             type: string
-        - name: labels
-          in: query
-          schema:
-            type: string
-        - name: q
-          in: query
-          schema:
-            type: string
-        - name: offset
-          in: query
-          schema:
-            type: integer
-            default: 0
-        - name: limit
+        - name: commits
           in: query
           schema:
             type: integer
             default: 50
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ResourceListPage"
-        "400":
-          description: Bad Request
-
-  /api/churn:
-    get:
-      operationId: GetChurn
-      parameters:
-        - name: cluster
-          in: query
-          schema:
-            type: string
-        - name: n
-          in: query
-          schema:
-            type: integer
-            default: 50
-        - name: threshold
-          in: query
-          schema:
-            type: number
-            default: 0.5
       responses:
         "200":
           description: OK
@@ -307,19 +389,35 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/ChurnEntry"
+                  $ref: "#/components/schemas/FieldVolatilityEntry"
+        "400":
+          description: Bad Request
 
 components:
   schemas:
-    ResourceMeta:
+    KindInfo:
+      type: object
+      required:
+        - group
+        - kind
+      properties:
+        group:
+          type: string
+        kind:
+          type: string
+
+    SnapshotResource:
       type: object
       required:
         - cluster
+        - group
         - kind
         - name
         - namespace
       properties:
         cluster:
+          type: string
+        group:
           type: string
         kind:
           type: string
@@ -334,6 +432,158 @@ components:
             type: string
         creationTimestamp:
           type: string
+
+    SnapshotPage:
+      type: object
+      required:
+        - items
+        - total
+        - offset
+        - limit
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SnapshotResource"
+        total:
+          type: integer
+        offset:
+          type: integer
+        limit:
+          type: integer
+        commitSha:
+          nullable: true
+          type: string
+        commitTime:
+          nullable: true
+          type: string
+          format: date-time
+
+    ChangeEvent:
+      type: object
+      required:
+        - timestamp
+        - sha
+        - cluster
+        - group
+        - kind
+        - namespace
+        - name
+        - changeType
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        sha:
+          type: string
+        cluster:
+          type: string
+        group:
+          type: string
+        kind:
+          type: string
+        namespace:
+          type: string
+        name:
+          type: string
+        changeType:
+          type: string
+          enum: [added, modified, deleted]
+
+    HistoryPage:
+      type: object
+      required:
+        - items
+        - total
+        - offset
+        - limit
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChangeEvent"
+        total:
+          type: integer
+        offset:
+          type: integer
+        limit:
+          type: integer
+
+    DiffResult:
+      type: object
+      required:
+        - before
+        - after
+      properties:
+        before:
+          type: string
+        after:
+          type: string
+
+    VolatilityEntry:
+      type: object
+      required:
+        - cluster
+        - group
+        - kind
+        - namespace
+        - name
+        - count
+        - total
+        - ratio
+      properties:
+        cluster:
+          type: string
+        group:
+          type: string
+        kind:
+          type: string
+        namespace:
+          type: string
+        name:
+          type: string
+        count:
+          type: integer
+        total:
+          type: integer
+        ratio:
+          type: number
+
+    VolatilityPage:
+      type: object
+      required:
+        - items
+        - total
+        - offset
+        - limit
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/VolatilityEntry"
+        total:
+          type: integer
+        offset:
+          type: integer
+        limit:
+          type: integer
+
+    FieldVolatilityEntry:
+      type: object
+      required:
+        - field
+        - count
+        - total
+        - ratio
+      properties:
+        field:
+          type: string
+        count:
+          type: integer
+        total:
+          type: integer
+        ratio:
+          type: number
 
     ClusterStatus:
       type: object
@@ -362,68 +612,3 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ClusterStatus"
-
-    HistoryEntry:
-      type: object
-      required:
-        - sha
-        - timestamp
-        - message
-      properties:
-        sha:
-          type: string
-        timestamp:
-          type: string
-          format: date-time
-        message:
-          type: string
-
-    DiffResult:
-      type: object
-      required:
-        - before
-        - after
-      properties:
-        before:
-          type: string
-        after:
-          type: string
-
-    ResourceListPage:
-      type: object
-      required:
-        - items
-        - total
-        - offset
-        - limit
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/ResourceMeta"
-        total:
-          type: integer
-        offset:
-          type: integer
-        limit:
-          type: integer
-
-    ChurnEntry:
-      type: object
-      required:
-        - cluster
-        - resource
-        - count
-        - total
-        - ratio
-      properties:
-        cluster:
-          type: string
-        resource:
-          type: string
-        count:
-          type: integer
-        total:
-          type: integer
-        ratio:
-          type: number

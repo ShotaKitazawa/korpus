@@ -6,15 +6,16 @@ package api
 type OperationName = string
 
 const (
-	GetChurnOperation           OperationName = "GetChurn"
-	GetResourceOperation        OperationName = "GetResource"
-	GetResourceDiffOperation    OperationName = "GetResourceDiff"
-	GetResourceHistoryOperation OperationName = "GetResourceHistory"
-	GetStatusOperation          OperationName = "GetStatus"
-	HealthzOperation            OperationName = "Healthz"
-	ListClustersOperation       OperationName = "ListClusters"
-	ListKindsOperation          OperationName = "ListKinds"
-	ListNamespacesOperation     OperationName = "ListNamespaces"
-	ListResourcesOperation      OperationName = "ListResources"
-	QueryResourcesOperation     OperationName = "QueryResources"
+	GetDiffOperation             OperationName = "GetDiff"
+	GetHistoryOperation          OperationName = "GetHistory"
+	GetResourceOperation         OperationName = "GetResource"
+	GetSnapshotOperation         OperationName = "GetSnapshot"
+	GetStatusOperation           OperationName = "GetStatus"
+	GetVolatilityOperation       OperationName = "GetVolatility"
+	GetVolatilityFieldsOperation OperationName = "GetVolatilityFields"
+	HealthzOperation             OperationName = "Healthz"
+	ListClustersOperation        OperationName = "ListClusters"
+	ListGroupsOperation          OperationName = "ListGroups"
+	ListKindsOperation           OperationName = "ListKinds"
+	ListNamespacesOperation      OperationName = "ListNamespaces"
 )
