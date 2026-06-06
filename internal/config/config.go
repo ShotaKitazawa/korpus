@@ -45,6 +45,13 @@ type ServerSpec struct {
 	PullInterval string          `yaml:"pullInterval"`
 	Clusters     []ClusterConfig `yaml:"clusters"`
 	Index        IndexConfig     `yaml:"index"`
+	OIDC         *OIDCConfig     `yaml:"oidc"`
+}
+
+type OIDCConfig struct {
+	Issuer   string `yaml:"issuer"`
+	Audience string `yaml:"audience"`
+	ClientID string `yaml:"clientId"`
 }
 
 // PullIntervalDuration parses PullInterval into a time.Duration.
@@ -185,6 +192,17 @@ func LoadServer(path string) (*ServerConfig, error) {
 	}
 	if len(cfg.Spec.Index.Fields) == 0 {
 		cfg.Spec.Index.Fields = []string{"metadata.labels", "metadata.creationTimestamp"}
+	}
+	if o := cfg.Spec.OIDC; o != nil {
+		if o.Issuer == "" {
+			return nil, fmt.Errorf("spec.oidc.issuer is required when oidc is configured")
+		}
+		if o.Audience == "" {
+			return nil, fmt.Errorf("spec.oidc.audience is required when oidc is configured")
+		}
+		if o.ClientID == "" {
+			return nil, fmt.Errorf("spec.oidc.clientId is required when oidc is configured")
+		}
 	}
 	return &cfg, nil
 }

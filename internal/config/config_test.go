@@ -234,3 +234,66 @@ func TestResolveExcludeFields_Override(t *testing.T) {
 	assert.Equal(t, []string{"metadata.resourceVersion", "status"},
 		ResolveExcludeFields(cfg, "pods", ""))
 }
+
+func baseServerYAML() string {
+	return `
+kind: ServerConfig
+spec:
+  clusters:
+    - name: prod
+      git:
+        repo: https://github.com/org/k8s-prod.git
+`
+}
+
+func TestLoadServer_OIDC_Valid(t *testing.T) {
+	yaml := baseServerYAML() + `  oidc:
+    issuer: https://example.auth0.com/
+    audience: https://api.example.com
+    clientId: abc123
+`
+	path := writeTempConfig(t, yaml)
+	cfg, err := LoadServer(path)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Spec.OIDC)
+	assert.Equal(t, "https://example.auth0.com/", cfg.Spec.OIDC.Issuer)
+	assert.Equal(t, "https://api.example.com", cfg.Spec.OIDC.Audience)
+	assert.Equal(t, "abc123", cfg.Spec.OIDC.ClientID)
+}
+
+func TestLoadServer_OIDC_Disabled(t *testing.T) {
+	path := writeTempConfig(t, baseServerYAML())
+	cfg, err := LoadServer(path)
+	require.NoError(t, err)
+	assert.Nil(t, cfg.Spec.OIDC)
+}
+
+func TestLoadServer_OIDC_MissingIssuer(t *testing.T) {
+	yaml := baseServerYAML() + `  oidc:
+    audience: https://api.example.com
+    clientId: abc123
+`
+	path := writeTempConfig(t, yaml)
+	_, err := LoadServer(path)
+	assert.ErrorContains(t, err, "issuer")
+}
+
+func TestLoadServer_OIDC_MissingAudience(t *testing.T) {
+	yaml := baseServerYAML() + `  oidc:
+    issuer: https://example.auth0.com/
+    clientId: abc123
+`
+	path := writeTempConfig(t, yaml)
+	_, err := LoadServer(path)
+	assert.ErrorContains(t, err, "audience")
+}
+
+func TestLoadServer_OIDC_MissingClientID(t *testing.T) {
+	yaml := baseServerYAML() + `  oidc:
+    issuer: https://example.auth0.com/
+    audience: https://api.example.com
+`
+	path := writeTempConfig(t, yaml)
+	_, err := LoadServer(path)
+	assert.ErrorContains(t, err, "clientId")
+}

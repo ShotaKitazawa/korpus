@@ -26,6 +26,7 @@ import (
 	"github.com/ShotaKitazawa/korpus/internal/config"
 	"github.com/ShotaKitazawa/korpus/internal/gitclient"
 	"github.com/ShotaKitazawa/korpus/internal/index"
+	oidcmw "github.com/ShotaKitazawa/korpus/internal/oidc"
 )
 
 //go:embed all:frontend/dist
@@ -220,7 +221,16 @@ func main() {
 		}()
 	}
 
-	mux := buildMux(cfg, states, logger)
+	var oidcMiddleware *oidcmw.Middleware
+	if cfg.Spec.OIDC != nil {
+		oidcMiddleware, err = oidcmw.New(ctx, cfg.Spec.OIDC.Issuer, cfg.Spec.OIDC.Audience)
+		if err != nil {
+			logger.Error("initialize oidc middleware", "err", err)
+			os.Exit(1)
+		}
+	}
+
+	mux := buildMux(ctx, cfg, states, logger, oidcMiddleware)
 	srv := &http.Server{Addr: cfg.Spec.Addr, Handler: mux}
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -250,7 +260,14 @@ func resolveStates(cluster string, states map[string]*ClusterState) []*ClusterSt
 	return nil
 }
 
-func buildMux(cfg *config.ServerConfig, states map[string]*ClusterState, logger *slog.Logger) http.Handler {
+func maybeProtect(mw *oidcmw.Middleware, h http.Handler) http.Handler {
+	if mw != nil {
+		return mw.Handler(h)
+	}
+	return h
+}
+
+func buildMux(ctx context.Context, cfg *config.ServerConfig, states map[string]*ClusterState, logger *slog.Logger, oidcMW *oidcmw.Middleware) http.Handler {
 	mux := http.NewServeMux()
 
 	clusterNames := make([]string, 0, len(cfg.Spec.Clusters))
@@ -267,11 +284,14 @@ func buildMux(cfg *config.ServerConfig, states map[string]*ClusterState, logger 
 	if err != nil {
 		panic(fmt.Sprintf("create api server: %v", err))
 	}
+	// Always-public routes
 	mux.Handle("/healthz", ogenSrv)
-	mux.Handle("/api/", ogenSrv)
+	mux.HandleFunc("/.well-known/oauth-protected-resource", oauthProtectedResourceHandler(cfg))
+	mux.HandleFunc("/auth-config", authConfigHandler(cfg))
 
-	// MCP
-	mux.Handle("/mcp", buildMCPServer(states, clusterNames))
+	// Protected routes (JWT middleware when OIDC is configured)
+	mux.Handle("/api/", maybeProtect(oidcMW, ogenSrv))
+	mux.Handle("/mcp", maybeProtect(oidcMW, buildMCPServer(states, clusterNames)))
 
 	// Frontend (SPA)
 	distFS, err := fs.Sub(frontendDist, "frontend/dist")
@@ -543,6 +563,39 @@ func buildMCPServer(states map[string]*ClusterState, clusterNames []string) http
 	})
 
 	return mcpserver.NewStreamableHTTPServer(s)
+}
+
+// oauthProtectedResourceHandler serves RFC9728 metadata when OIDC is configured.
+func oauthProtectedResourceHandler(cfg *config.ServerConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if cfg.Spec.OIDC == nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			"resource":                 cfg.Spec.OIDC.Audience,
+			"authorization_servers":    []string{cfg.Spec.OIDC.Issuer},
+			"bearer_methods_supported": []string{"header"},
+		})
+	}
+}
+
+// authConfigHandler serves OIDC configuration to the SPA frontend.
+func authConfigHandler(cfg *config.ServerConfig) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if cfg.Spec.OIDC == nil {
+			json.NewEncoder(w).Encode(map[string]any{"enabled": false}) //nolint:errcheck
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			"enabled":  true,
+			"issuer":   cfg.Spec.OIDC.Issuer,
+			"clientId": cfg.Spec.OIDC.ClientID,
+			"audience": cfg.Spec.OIDC.Audience,
+		})
+	}
 }
 
 func mustJSON(v any) string {

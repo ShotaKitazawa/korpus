@@ -60,7 +60,7 @@ func buildTestServer(t *testing.T, states map[string]*ClusterState) *httptest.Se
 			Clusters: []config.ClusterConfig{{Name: "test-cluster"}},
 		},
 	}
-	ts := httptest.NewServer(buildMux(cfg, states, slog.Default()))
+	ts := httptest.NewServer(buildMux(t.Context(), cfg, states, slog.Default(), nil))
 	t.Cleanup(ts.Close)
 	return ts
 }
