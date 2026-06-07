@@ -39,7 +39,13 @@ func BuildCommitIndex(repo *git.Repository) (*CommitIndex, error) {
 		return nil, err
 	}
 
-	sort.Slice(refs, func(i, j int) bool {
+	// repo.Log returns newest-first; reverse to oldest-first so SliceStable
+	// preserves topological order for equal timestamps — the newest commit among
+	// same-second entries ends up at the highest index, which is what FindBefore needs.
+	for i, j := 0, len(refs)-1; i < j; i, j = i+1, j-1 {
+		refs[i], refs[j] = refs[j], refs[i]
+	}
+	sort.SliceStable(refs, func(i, j int) bool {
 		return refs[i].Time.Before(refs[j].Time)
 	})
 	return &CommitIndex{refs: refs}, nil

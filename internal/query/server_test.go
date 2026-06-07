@@ -377,7 +377,7 @@ func TestGetHistoricalSnapshot_CommitMetadata(t *testing.T) {
 	stub := buildGitStub(t, "c")
 	q := newServer(map[string]query.ClusterQuerier{"c": stub}, []string{"c"})
 
-	result, err := q.GetHistoricalSnapshot(time.Now(), "c", "", "", "", "", 50, 0)
+	result, err := q.GetHistoricalSnapshot(time.Now().Add(time.Hour), "c", "", "", "", "", 50, 0)
 	require.NoError(t, err)
 	assert.NotEmpty(t, result.CommitSHA)
 	assert.False(t, result.CommitTime.IsZero())
