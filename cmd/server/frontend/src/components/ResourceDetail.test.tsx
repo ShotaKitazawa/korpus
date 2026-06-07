@@ -169,7 +169,24 @@ describe("ResourceDetail", () => {
     })
   })
 
-  it("loads diff on history entry click", async () => {
+  it("shows select prompt and selection state in history tab", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(jsonResponse(historyPage)),
+    )
+
+    render(<ResourceDetail resource={mockResource} yaml={sampleYaml} />)
+    fireEvent.click(screen.getByText("History"))
+
+    await waitFor(() => expect(screen.getByText("abc12345")).toBeTruthy())
+
+    expect(screen.getByText("select two commits to compare")).toBeTruthy()
+
+    fireEvent.click(screen.getByText("modified"))
+    expect(screen.getByText("select one more commit to compare")).toBeTruthy()
+  })
+
+  it("loads diff when two commits are selected", async () => {
     const mockFetch = vi
       .fn()
       .mockImplementationOnce(jsonResponse(historyPage))
@@ -183,6 +200,7 @@ describe("ResourceDetail", () => {
     await waitFor(() => expect(screen.getByText("abc12345")).toBeTruthy())
 
     fireEvent.click(screen.getByText("modified"))
+    fireEvent.click(screen.getByText("added"))
 
     await waitFor(() => {
       expect(mockFetch).toHaveBeenCalledTimes(2)
@@ -193,7 +211,7 @@ describe("ResourceDetail", () => {
     })
   })
 
-  it("renders diff panes", async () => {
+  it("renders diff panes with FROM/TO labels after selecting two commits", async () => {
     const fetchMock = vi
       .fn()
       .mockImplementationOnce(jsonResponse(historyPage))
@@ -205,11 +223,32 @@ describe("ResourceDetail", () => {
     render(<ResourceDetail resource={mockResource} yaml={sampleYaml} />)
     fireEvent.click(screen.getByText("History"))
     await waitFor(() => expect(screen.getByText("abc12345")).toBeTruthy())
+
     fireEvent.click(screen.getByText("modified"))
+    fireEvent.click(screen.getByText("added"))
 
     await waitFor(() => {
-      expect(screen.queryByText("click a commit to see diff")).toBeNull()
+      expect(screen.queryByText("select two commits to compare")).toBeNull()
+      expect(screen.getByText("FROM")).toBeTruthy()
+      expect(screen.getByText("TO")).toBeTruthy()
     })
+  })
+
+  it("deselects a commit on second click", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(jsonResponse(historyPage)),
+    )
+
+    render(<ResourceDetail resource={mockResource} yaml={sampleYaml} />)
+    fireEvent.click(screen.getByText("History"))
+    await waitFor(() => expect(screen.getByText("abc12345")).toBeTruthy())
+
+    fireEvent.click(screen.getByText("modified"))
+    expect(screen.getByText("select one more commit to compare")).toBeTruthy()
+
+    fireEvent.click(screen.getByText("modified"))
+    expect(screen.getByText("select two commits to compare")).toBeTruthy()
   })
 
   it("resets to yaml tab when resource changes", async () => {
