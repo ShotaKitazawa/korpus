@@ -41,10 +41,34 @@ export function getStoredToken(): string | null {
   return token
 }
 
+type OIDCEndpoints = {
+  authorizationEndpoint: string
+  tokenEndpoint: string
+}
+
+async function discoverEndpoints(issuer: string): Promise<OIDCEndpoints> {
+  const base = issuer.endsWith("/") ? issuer.slice(0, -1) : issuer
+  const res = await fetch(`${base}/.well-known/openid-configuration`)
+  if (!res.ok) throw new Error(`OIDC discovery failed: ${res.status}`)
+  const doc = (await res.json()) as {
+    authorization_endpoint: string
+    token_endpoint: string
+  }
+  if (!doc.authorization_endpoint || !doc.token_endpoint) {
+    throw new Error("OIDC discovery document missing required endpoint fields")
+  }
+  return {
+    authorizationEndpoint: doc.authorization_endpoint,
+    tokenEndpoint: doc.token_endpoint,
+  }
+}
+
 export async function initAuth(): Promise<void> {
   const res = await fetch("/auth-config")
   const cfg: AuthConfig = await res.json()
   if (!cfg.enabled) return
+
+  const endpoints = await discoverEndpoints(cfg.issuer)
 
   const params = new URLSearchParams(window.location.search)
   const code = params.get("code")
@@ -54,7 +78,7 @@ export async function initAuth(): Promise<void> {
     const savedState = sessionStorage.getItem(STATE_KEY)
     const verifier = sessionStorage.getItem(VERIFIER_KEY)
     if (state === savedState && verifier) {
-      await exchangeCode(cfg, code, verifier)
+      await exchangeCode(cfg, endpoints, code, verifier)
       sessionStorage.removeItem(STATE_KEY)
       sessionStorage.removeItem(VERIFIER_KEY)
       params.delete("code")
@@ -65,12 +89,13 @@ export async function initAuth(): Promise<void> {
   }
 
   if (!getStoredToken()) {
-    await startPKCEFlow(cfg)
+    await startPKCEFlow(cfg, endpoints)
   }
 }
 
 async function startPKCEFlow(
   cfg: AuthConfig & { enabled: true },
+  endpoints: OIDCEndpoints,
 ): Promise<void> {
   const verifier = randomBase64url(32)
   const challenge = await sha256base64url(verifier)
@@ -90,17 +115,18 @@ async function startPKCEFlow(
     state,
   })
 
-  window.location.href = `${cfg.issuer}authorize?${authParams}`
+  window.location.href = `${endpoints.authorizationEndpoint}?${authParams}`
   // redirect — never returns
   await new Promise<never>(() => {})
 }
 
 async function exchangeCode(
   cfg: AuthConfig & { enabled: true },
+  endpoints: OIDCEndpoints,
   code: string,
   verifier: string,
 ): Promise<void> {
-  const res = await fetch(`${cfg.issuer}oauth/token`, {
+  const res = await fetch(endpoints.tokenEndpoint, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
