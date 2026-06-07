@@ -104,14 +104,20 @@ Pulls the backup repo every `server.pullInterval` (default: `10m`) and rebuilds 
 | Endpoint | Description |
 |---|---|
 | `GET /` | React SPA |
+| `GET /healthz` | Health check |
 | `GET /api/clusters` | Cluster names |
-| `GET /api/namespaces?cluster=` | Unique namespaces (`cluster` optional, omit for all) |
-| `GET /api/resources?kind=&namespace=&cluster=` | List resources |
-| `GET /api/resources/{cluster}/{kind}/{namespace}/{name}` | Raw YAML |
-| `GET /api/query?kind=&namespace=&q=&cluster=` | CEL query (`kind` required) |
+| `GET /api/groups?cluster=` | API groups |
+| `GET /api/kinds?cluster=&group=` | Resource kinds |
+| `GET /api/namespaces?cluster=` | Unique namespaces |
+| `GET /api/snapshot?cluster=&group=&kind=&namespace=&name=&cel=&datetime=&limit=&offset=` | Resource list at a point in time (omit `datetime` for current; `cel` is incompatible with `datetime`) |
+| `GET /api/resource?cluster=&group=&kind=&namespace=&name=` | Raw YAML of a single resource |
+| `GET /api/history?cluster=&group=&kind=&namespace=&name=&since=&until=&limit=&offset=` | Change history for a resource |
+| `GET /api/diff?cluster=&group=&kind=&namespace=&name=&from=&to=` | YAML diff between two commits |
+| `GET /api/volatility?cluster=&group=&kind=&namespace=&commits=&threshold=&limit=&offset=` | Resources ranked by change frequency |
+| `GET /api/volatility/fields?cluster=&group=&kind=&namespace=&name=&commits=` | Field-level change frequency for a resource |
 | `POST /mcp` | MCP server (HTTP SSE) |
 
-**CEL query examples:**
+**CEL expression examples** (used in `cel=` parameter of `/api/snapshot`):
 
 ```
 object.spec.replicas > 1
@@ -119,7 +125,7 @@ object.metadata.labels["app"] == "nginx"
 object.status.phase == "Running"
 ```
 
-**MCP tools:** `list_clusters`, `list_namespaces`, `list_resources`, `get_resource`, `query_resources`
+**MCP tools:** `list_clusters`, `list_groups`, `list_kinds`, `list_namespaces`, `get_resource`, `get_snapshot`, `get_history`, `get_diff`, `get_volatility`, `get_volatility_fields`
 
 ### config reference
 
