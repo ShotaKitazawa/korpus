@@ -76,17 +76,10 @@ func (UnimplementedHandler) ListClusters(ctx context.Context) (r []string, _ err
 	return r, ht.ErrNotImplemented
 }
 
-// ListGroups implements ListGroups operation.
+// ListGVKs implements ListGVKs operation.
 //
-// GET /api/groups
-func (UnimplementedHandler) ListGroups(ctx context.Context, params ListGroupsParams) (r []string, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// ListKinds implements ListKinds operation.
-//
-// GET /api/kinds
-func (UnimplementedHandler) ListKinds(ctx context.Context, params ListKindsParams) (r []KindInfo, _ error) {
+// GET /api/gvks
+func (UnimplementedHandler) ListGVKs(ctx context.Context, params ListGVKsParams) (r []GVKInfo, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

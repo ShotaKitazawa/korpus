@@ -63,14 +63,10 @@ type Invoker interface {
 	//
 	// GET /api/clusters
 	ListClusters(ctx context.Context) ([]string, error)
-	// ListGroups invokes ListGroups operation.
+	// ListGVKs invokes ListGVKs operation.
 	//
-	// GET /api/groups
-	ListGroups(ctx context.Context, params ListGroupsParams) ([]string, error)
-	// ListKinds invokes ListKinds operation.
-	//
-	// GET /api/kinds
-	ListKinds(ctx context.Context, params ListKindsParams) ([]KindInfo, error)
+	// GET /api/gvks
+	ListGVKs(ctx context.Context, params ListGVKsParams) ([]GVKInfo, error)
 	// ListNamespaces invokes ListNamespaces operation.
 	//
 	// GET /api/namespaces
@@ -1534,19 +1530,19 @@ func (c *Client) sendListClusters(ctx context.Context) (res []string, err error)
 	return result, nil
 }
 
-// ListGroups invokes ListGroups operation.
+// ListGVKs invokes ListGVKs operation.
 //
-// GET /api/groups
-func (c *Client) ListGroups(ctx context.Context, params ListGroupsParams) ([]string, error) {
-	res, err := c.sendListGroups(ctx, params)
+// GET /api/gvks
+func (c *Client) ListGVKs(ctx context.Context, params ListGVKsParams) ([]GVKInfo, error) {
+	res, err := c.sendListGVKs(ctx, params)
 	return res, err
 }
 
-func (c *Client) sendListGroups(ctx context.Context, params ListGroupsParams) (res []string, err error) {
+func (c *Client) sendListGVKs(ctx context.Context, params ListGVKsParams) (res []GVKInfo, err error) {
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("ListGroups"),
+		otelogen.OperationID("ListGVKs"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/groups"),
+		semconv.URLTemplateKey.String("/api/gvks"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -1562,7 +1558,7 @@ func (c *Client) sendListGroups(ctx context.Context, params ListGroupsParams) (r
 	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
 
 	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, ListGroupsOperation,
+	ctx, span := c.cfg.Tracer.Start(ctx, ListGVKsOperation,
 		trace.WithAttributes(otelAttrs...),
 		clientSpanKind,
 	)
@@ -1580,7 +1576,7 @@ func (c *Client) sendListGroups(ctx context.Context, params ListGroupsParams) (r
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [1]string
-	pathParts[0] = "/api/groups"
+	pathParts[0] = "/api/gvks"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeQueryParams"
@@ -1595,116 +1591,6 @@ func (c *Client) sendListGroups(ctx context.Context, params ListGroupsParams) (r
 
 		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
 			if val, ok := params.Cluster.Get(); ok {
-				return e.EncodeValue(conv.StringToString(val))
-			}
-			return nil
-		}); err != nil {
-			return res, errors.Wrap(err, "encode query")
-		}
-	}
-	u.RawQuery = q.Values().Encode()
-
-	stage = "EncodeRequest"
-	r, err := ht.NewRequest(ctx, "GET", u)
-	if err != nil {
-		return res, errors.Wrap(err, "create request")
-	}
-
-	stage = "SendRequest"
-	resp, err := c.cfg.Client.Do(r)
-	if err != nil {
-		return res, errors.Wrap(err, "do request")
-	}
-	body := resp.Body
-	defer body.Close()
-
-	stage = "DecodeResponse"
-	result, err := decodeListGroupsResponse(resp)
-	if err != nil {
-		return res, errors.Wrap(err, "decode response")
-	}
-
-	return result, nil
-}
-
-// ListKinds invokes ListKinds operation.
-//
-// GET /api/kinds
-func (c *Client) ListKinds(ctx context.Context, params ListKindsParams) ([]KindInfo, error) {
-	res, err := c.sendListKinds(ctx, params)
-	return res, err
-}
-
-func (c *Client) sendListKinds(ctx context.Context, params ListKindsParams) (res []KindInfo, err error) {
-	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("ListKinds"),
-		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/kinds"),
-	}
-	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		elapsedDuration := time.Since(startTime)
-		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
-	}()
-
-	// Increment request counter.
-	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-
-	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, ListKindsOperation,
-		trace.WithAttributes(otelAttrs...),
-		clientSpanKind,
-	)
-	// Track stage for error reporting.
-	var stage string
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, stage)
-			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-		}
-		span.End()
-	}()
-
-	stage = "BuildURL"
-	u := uri.Clone(c.requestURL(ctx))
-	var pathParts [1]string
-	pathParts[0] = "/api/kinds"
-	uri.AddPathParts(u, pathParts[:]...)
-
-	stage = "EncodeQueryParams"
-	q := uri.NewQueryEncoder()
-	{
-		// Encode "cluster" parameter.
-		cfg := uri.QueryParameterEncodingConfig{
-			Name:    "cluster",
-			Style:   uri.QueryStyleForm,
-			Explode: true,
-		}
-
-		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
-			if val, ok := params.Cluster.Get(); ok {
-				return e.EncodeValue(conv.StringToString(val))
-			}
-			return nil
-		}); err != nil {
-			return res, errors.Wrap(err, "encode query")
-		}
-	}
-	{
-		// Encode "group" parameter.
-		cfg := uri.QueryParameterEncodingConfig{
-			Name:    "group",
-			Style:   uri.QueryStyleForm,
-			Explode: true,
-		}
-
-		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
-			if val, ok := params.Group.Get(); ok {
 				return e.EncodeValue(conv.StringToString(val))
 			}
 			return nil
@@ -1746,7 +1632,7 @@ func (c *Client) sendListKinds(ctx context.Context, params ListKindsParams) (res
 	defer body.Close()
 
 	stage = "DecodeResponse"
-	result, err := decodeListKindsResponse(resp)
+	result, err := decodeListGVKsResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

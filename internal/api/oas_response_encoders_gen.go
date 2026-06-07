@@ -203,25 +203,7 @@ func encodeListClustersResponse(response []string, w http.ResponseWriter, span t
 	return nil
 }
 
-func encodeListGroupsResponse(response []string, w http.ResponseWriter, span trace.Span) error {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(200)
-	span.SetStatus(codes.Ok, http.StatusText(200))
-
-	e := new(jx.Encoder)
-	e.ArrStart()
-	for _, elem := range response {
-		e.Str(elem)
-	}
-	e.ArrEnd()
-	if _, err := e.WriteTo(w); err != nil {
-		return errors.Wrap(err, "write")
-	}
-
-	return nil
-}
-
-func encodeListKindsResponse(response []KindInfo, w http.ResponseWriter, span trace.Span) error {
+func encodeListGVKsResponse(response []GVKInfo, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
 	span.SetStatus(codes.Ok, http.StatusText(200))

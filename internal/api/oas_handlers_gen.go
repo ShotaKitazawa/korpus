@@ -1405,22 +1405,22 @@ func (s *Server) handleListClustersRequest(args [0]string, argsEscaped bool, w h
 	}
 }
 
-// handleListGroupsRequest handles ListGroups operation.
+// handleListGVKsRequest handles ListGVKs operation.
 //
-// GET /api/groups
-func (s *Server) handleListGroupsRequest(args [0]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+// GET /api/gvks
+func (s *Server) handleListGVKsRequest(args [0]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("ListGroups"),
+		otelogen.OperationID("ListGVKs"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/groups"),
+		semconv.HTTPRouteKey.String("/api/gvks"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
-	ctx, span := s.cfg.Tracer.Start(r.Context(), ListGroupsOperation,
+	ctx, span := s.cfg.Tracer.Start(r.Context(), ListGVKsOperation,
 		trace.WithAttributes(otelAttrs...),
 		serverSpanKind,
 	)
@@ -1475,11 +1475,11 @@ func (s *Server) handleListGroupsRequest(args [0]string, argsEscaped bool, w htt
 		}
 		err          error
 		opErrContext = ogenerrors.OperationContext{
-			Name: ListGroupsOperation,
-			ID:   "ListGroups",
+			Name: ListGVKsOperation,
+			ID:   "ListGVKs",
 		}
 	)
-	params, err := decodeListGroupsParams(args, argsEscaped, r)
+	params, err := decodeListGVKsParams(args, argsEscaped, r)
 	if err != nil {
 		err = &ogenerrors.DecodeParamsError{
 			OperationContext: opErrContext,
@@ -1492,13 +1492,13 @@ func (s *Server) handleListGroupsRequest(args [0]string, argsEscaped bool, w htt
 
 	var rawBody []byte
 
-	var response []string
+	var response []GVKInfo
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
-			OperationName:    ListGroupsOperation,
+			OperationName:    ListGVKsOperation,
 			OperationSummary: "",
-			OperationID:      "ListGroups",
+			OperationID:      "ListGVKs",
 			Body:             nil,
 			RawBody:          rawBody,
 			Params: middleware.Parameters{
@@ -1506,151 +1506,6 @@ func (s *Server) handleListGroupsRequest(args [0]string, argsEscaped bool, w htt
 					Name: "cluster",
 					In:   "query",
 				}: params.Cluster,
-			},
-			Raw: r,
-		}
-
-		type (
-			Request  = struct{}
-			Params   = ListGroupsParams
-			Response = []string
-		)
-		response, err = middleware.HookMiddleware[
-			Request,
-			Params,
-			Response,
-		](
-			m,
-			mreq,
-			unpackListGroupsParams,
-			func(ctx context.Context, request Request, params Params) (response Response, err error) {
-				response, err = s.h.ListGroups(ctx, params)
-				return response, err
-			},
-		)
-	} else {
-		response, err = s.h.ListGroups(ctx, params)
-	}
-	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
-		return
-	}
-
-	if err := encodeListGroupsResponse(response, w, span); err != nil {
-		defer recordError("EncodeResponse", err)
-		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
-			s.cfg.ErrorHandler(ctx, w, r, err)
-		}
-		return
-	}
-}
-
-// handleListKindsRequest handles ListKinds operation.
-//
-// GET /api/kinds
-func (s *Server) handleListKindsRequest(args [0]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
-	statusWriter := &codeRecorder{ResponseWriter: w}
-	w = statusWriter
-	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("ListKinds"),
-		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/kinds"),
-	}
-	// Add attributes from config.
-	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
-
-	// Start a span for this request.
-	ctx, span := s.cfg.Tracer.Start(r.Context(), ListKindsOperation,
-		trace.WithAttributes(otelAttrs...),
-		serverSpanKind,
-	)
-	defer span.End()
-
-	// Add Labeler to context.
-	labeler := &Labeler{attrs: otelAttrs}
-	ctx = contextWithLabeler(ctx, labeler)
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		elapsedDuration := time.Since(startTime)
-
-		attrSet := labeler.AttributeSet()
-		attrs := attrSet.ToSlice()
-		code := statusWriter.status
-		if code != 0 {
-			codeAttr := semconv.HTTPResponseStatusCode(code)
-			attrs = append(attrs, codeAttr)
-			span.SetAttributes(codeAttr)
-		}
-		attrOpt := metric.WithAttributes(attrs...)
-
-		// Increment request counter.
-		s.requests.Add(ctx, 1, attrOpt)
-
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
-	}()
-
-	var (
-		recordError = func(stage string, err error) {
-			span.RecordError(err)
-
-			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
-			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
-			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
-			// max redirects exceeded), in which case status MUST be set to Error.
-			code := statusWriter.status
-			if code < 100 || code >= 500 {
-				span.SetStatus(codes.Error, stage)
-			}
-
-			attrSet := labeler.AttributeSet()
-			attrs := attrSet.ToSlice()
-			if code != 0 {
-				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
-			}
-
-			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
-		}
-		err          error
-		opErrContext = ogenerrors.OperationContext{
-			Name: ListKindsOperation,
-			ID:   "ListKinds",
-		}
-	)
-	params, err := decodeListKindsParams(args, argsEscaped, r)
-	if err != nil {
-		err = &ogenerrors.DecodeParamsError{
-			OperationContext: opErrContext,
-			Err:              err,
-		}
-		defer recordError("DecodeParams", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
-		return
-	}
-
-	var rawBody []byte
-
-	var response []KindInfo
-	if m := s.cfg.Middleware; m != nil {
-		mreq := middleware.Request{
-			Context:          ctx,
-			OperationName:    ListKindsOperation,
-			OperationSummary: "",
-			OperationID:      "ListKinds",
-			Body:             nil,
-			RawBody:          rawBody,
-			Params: middleware.Parameters{
-				{
-					Name: "cluster",
-					In:   "query",
-				}: params.Cluster,
-				{
-					Name: "group",
-					In:   "query",
-				}: params.Group,
 				{
 					Name: "namespace",
 					In:   "query",
@@ -1661,8 +1516,8 @@ func (s *Server) handleListKindsRequest(args [0]string, argsEscaped bool, w http
 
 		type (
 			Request  = struct{}
-			Params   = ListKindsParams
-			Response = []KindInfo
+			Params   = ListGVKsParams
+			Response = []GVKInfo
 		)
 		response, err = middleware.HookMiddleware[
 			Request,
@@ -1671,14 +1526,14 @@ func (s *Server) handleListKindsRequest(args [0]string, argsEscaped bool, w http
 		](
 			m,
 			mreq,
-			unpackListKindsParams,
+			unpackListGVKsParams,
 			func(ctx context.Context, request Request, params Params) (response Response, err error) {
-				response, err = s.h.ListKinds(ctx, params)
+				response, err = s.h.ListGVKs(ctx, params)
 				return response, err
 			},
 		)
 	} else {
-		response, err = s.h.ListKinds(ctx, params)
+		response, err = s.h.ListGVKs(ctx, params)
 	}
 	if err != nil {
 		defer recordError("Internal", err)
@@ -1686,7 +1541,7 @@ func (s *Server) handleListKindsRequest(args [0]string, argsEscaped bool, w http
 		return
 	}
 
-	if err := encodeListKindsResponse(response, w, span); err != nil {
+	if err := encodeListGVKsResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)

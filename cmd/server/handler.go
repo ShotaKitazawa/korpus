@@ -69,19 +69,29 @@ func (h *apiHandler) ListClusters(_ context.Context) ([]string, error) {
 	return h.clusterNames, nil
 }
 
-func (h *apiHandler) ListGroups(_ context.Context, params api.ListGroupsParams) ([]string, error) {
+func (h *apiHandler) ListGVKs(_ context.Context, params api.ListGVKsParams) ([]api.GVKInfo, error) {
 	cluster := params.Cluster.Or("")
-	seen := make(map[string]struct{})
+	ns := params.Namespace.Or("")
+	type key struct{ g, v, k string }
+	seen := make(map[key]struct{})
 	for _, st := range h.resolveStates(cluster) {
-		for _, g := range st.idx.Groups() {
-			seen[g] = struct{}{}
+		for _, gvk := range st.idx.GVKs(ns) {
+			seen[key{gvk.Group, gvk.Version, gvk.Kind}] = struct{}{}
 		}
 	}
-	result := make([]string, 0, len(seen))
-	for g := range seen {
-		result = append(result, g)
+	result := make([]api.GVKInfo, 0, len(seen))
+	for k := range seen {
+		result = append(result, api.GVKInfo{Group: k.g, Version: k.v, Kind: k.k})
 	}
-	sort.Strings(result)
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Group != result[j].Group {
+			return result[i].Group < result[j].Group
+		}
+		if result[i].Version != result[j].Version {
+			return result[i].Version < result[j].Version
+		}
+		return result[i].Kind < result[j].Kind
+	})
 	return result, nil
 }
 
@@ -98,30 +108,6 @@ func (h *apiHandler) ListNamespaces(_ context.Context, params api.ListNamespaces
 		result = append(result, ns)
 	}
 	sort.Strings(result)
-	return result, nil
-}
-
-func (h *apiHandler) ListKinds(_ context.Context, params api.ListKindsParams) ([]api.KindInfo, error) {
-	cluster := params.Cluster.Or("")
-	group := params.Group.Or("")
-	ns := params.Namespace.Or("")
-	type key struct{ g, k string }
-	seen := make(map[key]struct{})
-	for _, st := range h.resolveStates(cluster) {
-		for _, ki := range st.idx.Kinds(ns, group) {
-			seen[key{ki.Group, ki.Kind}] = struct{}{}
-		}
-	}
-	result := make([]api.KindInfo, 0, len(seen))
-	for k := range seen {
-		result = append(result, api.KindInfo{Group: k.g, Kind: k.k})
-	}
-	sort.Slice(result, func(i, j int) bool {
-		if result[i].Group != result[j].Group {
-			return result[i].Group < result[j].Group
-		}
-		return result[i].Kind < result[j].Kind
-	})
 	return result, nil
 }
 

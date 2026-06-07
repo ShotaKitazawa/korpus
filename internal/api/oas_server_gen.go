@@ -44,14 +44,10 @@ type Handler interface {
 	//
 	// GET /api/clusters
 	ListClusters(ctx context.Context) ([]string, error)
-	// ListGroups implements ListGroups operation.
+	// ListGVKs implements ListGVKs operation.
 	//
-	// GET /api/groups
-	ListGroups(ctx context.Context, params ListGroupsParams) ([]string, error)
-	// ListKinds implements ListKinds operation.
-	//
-	// GET /api/kinds
-	ListKinds(ctx context.Context, params ListKindsParams) ([]KindInfo, error)
+	// GET /api/gvks
+	ListGVKs(ctx context.Context, params ListGVKsParams) ([]GVKInfo, error)
 	// ListNamespaces implements ListNamespaces operation.
 	//
 	// GET /api/namespaces

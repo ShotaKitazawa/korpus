@@ -230,63 +230,38 @@ func TestNamespaces(t *testing.T) {
 	}
 }
 
-func TestGroups(t *testing.T) {
+func TestGVKs_All(t *testing.T) {
 	ts := buildTestServer(t, map[string]*ClusterState{"test-cluster": buildTestState(t)})
 
-	resp, err := http.Get(ts.URL + "/api/groups")
+	resp, err := http.Get(ts.URL + "/api/gvks")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	var groups []string
-	decodeJSON(t, resp, &groups)
-	assert.ElementsMatch(t, []string{"core", "apps"}, groups)
+	var gvks []struct {
+		Group   string `json:"group"`
+		Version string `json:"version"`
+		Kind    string `json:"kind"`
+	}
+	decodeJSON(t, resp, &gvks)
+	require.Len(t, gvks, 3)
 }
 
-func TestKinds_All(t *testing.T) {
+func TestGVKs_ByNamespace(t *testing.T) {
 	ts := buildTestServer(t, map[string]*ClusterState{"test-cluster": buildTestState(t)})
 
-	resp, err := http.Get(ts.URL + "/api/kinds")
+	resp, err := http.Get(ts.URL + "/api/gvks?namespace=default")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	var kinds []struct {
-		Group string `json:"group"`
-		Kind  string `json:"kind"`
+	var gvks []struct {
+		Group   string `json:"group"`
+		Version string `json:"version"`
+		Kind    string `json:"kind"`
 	}
-	decodeJSON(t, resp, &kinds)
-	require.Len(t, kinds, 3)
-}
-
-func TestKinds_ByNamespace(t *testing.T) {
-	ts := buildTestServer(t, map[string]*ClusterState{"test-cluster": buildTestState(t)})
-
-	resp, err := http.Get(ts.URL + "/api/kinds?namespace=default")
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	var kinds []struct {
-		Group string `json:"group"`
-		Kind  string `json:"kind"`
-	}
-	decodeJSON(t, resp, &kinds)
-	require.Len(t, kinds, 1)
-	assert.Equal(t, "Pod", kinds[0].Kind)
-}
-
-func TestKinds_ByGroup(t *testing.T) {
-	ts := buildTestServer(t, map[string]*ClusterState{"test-cluster": buildTestState(t)})
-
-	resp, err := http.Get(ts.URL + "/api/kinds?group=apps")
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	var kinds []struct {
-		Group string `json:"group"`
-		Kind  string `json:"kind"`
-	}
-	decodeJSON(t, resp, &kinds)
-	require.Len(t, kinds, 1)
-	assert.Equal(t, "Deployment", kinds[0].Kind)
+	decodeJSON(t, resp, &gvks)
+	require.Len(t, gvks, 1)
+	assert.Equal(t, "Pod", gvks[0].Kind)
+	assert.Equal(t, "v1", gvks[0].Version)
 }
 
 func TestSnapshot_All(t *testing.T) {

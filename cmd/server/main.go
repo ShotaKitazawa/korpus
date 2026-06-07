@@ -332,47 +332,28 @@ func buildMCPServer(states map[string]*ClusterState, clusterNames []string) http
 		return mcp.NewToolResultText(mustJSON(clusterNames)), nil
 	})
 
-	s.AddTool(mcp.NewTool("list_groups",
-		mcp.WithDescription("List API groups, optionally filtered by cluster"),
+	s.AddTool(mcp.NewTool("list_gvks",
+		mcp.WithDescription("List available GVKs (Group/Version/Kind), optionally filtered by cluster or namespace"),
 		mcp.WithString("cluster", mcp.Description("Cluster name (optional)")),
-	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		args := req.GetArguments()
-		cluster, _ := args["cluster"].(string)
-		seen := make(map[string]struct{})
-		for _, st := range resolveStates(cluster) {
-			for _, g := range st.idx.Groups() {
-				seen[g] = struct{}{}
-			}
-		}
-		result := make([]string, 0, len(seen))
-		for g := range seen {
-			result = append(result, g)
-		}
-		return mcp.NewToolResultText(mustJSON(result)), nil
-	})
-
-	s.AddTool(mcp.NewTool("list_kinds",
-		mcp.WithDescription("List resource kinds, optionally filtered by cluster, group, or namespace"),
-		mcp.WithString("cluster", mcp.Description("Cluster name (optional)")),
-		mcp.WithString("group", mcp.Description("API group filter (optional)")),
 		mcp.WithString("namespace", mcp.Description("Namespace filter (optional)")),
 	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		cluster, _ := args["cluster"].(string)
-		group, _ := args["group"].(string)
 		ns, _ := args["namespace"].(string)
-		type kindInfo struct {
-			Group string `json:"group"`
-			Kind  string `json:"kind"`
+		type gvkInfo struct {
+			Group   string `json:"group"`
+			Version string `json:"version"`
+			Kind    string `json:"kind"`
 		}
-		seen := make(map[string]struct{})
-		var result []kindInfo
+		type key struct{ g, v, k string }
+		seen := make(map[key]struct{})
+		var result []gvkInfo
 		for _, st := range resolveStates(cluster) {
-			for _, ki := range st.idx.Kinds(ns, group) {
-				key := ki.Group + "/" + ki.Kind
-				if _, ok := seen[key]; !ok {
-					seen[key] = struct{}{}
-					result = append(result, kindInfo{Group: ki.Group, Kind: ki.Kind})
+			for _, gvk := range st.idx.GVKs(ns) {
+				k := key{gvk.Group, gvk.Version, gvk.Kind}
+				if _, ok := seen[k]; !ok {
+					seen[k] = struct{}{}
+					result = append(result, gvkInfo{Group: gvk.Group, Version: gvk.Version, Kind: gvk.Kind})
 				}
 			}
 		}

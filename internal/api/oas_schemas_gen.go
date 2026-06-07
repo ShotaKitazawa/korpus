@@ -273,6 +273,43 @@ func (s *FieldVolatilityEntry) SetRatio(val float64) {
 	s.Ratio = val
 }
 
+// Ref: #/components/schemas/GVKInfo
+type GVKInfo struct {
+	Group   string `json:"group"`
+	Version string `json:"version"`
+	Kind    string `json:"kind"`
+}
+
+// GetGroup returns the value of Group.
+func (s *GVKInfo) GetGroup() string {
+	return s.Group
+}
+
+// GetVersion returns the value of Version.
+func (s *GVKInfo) GetVersion() string {
+	return s.Version
+}
+
+// GetKind returns the value of Kind.
+func (s *GVKInfo) GetKind() string {
+	return s.Kind
+}
+
+// SetGroup sets the value of Group.
+func (s *GVKInfo) SetGroup(val string) {
+	s.Group = val
+}
+
+// SetVersion sets the value of Version.
+func (s *GVKInfo) SetVersion(val string) {
+	s.Version = val
+}
+
+// SetKind sets the value of Kind.
+func (s *GVKInfo) SetKind(val string) {
+	s.Kind = val
+}
+
 // GetDiffBadRequest is response for GetDiff operation.
 type GetDiffBadRequest struct{}
 
@@ -422,32 +459,6 @@ func (s *HistoryPage) SetOffset(val int) {
 // SetLimit sets the value of Limit.
 func (s *HistoryPage) SetLimit(val int) {
 	s.Limit = val
-}
-
-// Ref: #/components/schemas/KindInfo
-type KindInfo struct {
-	Group string `json:"group"`
-	Kind  string `json:"kind"`
-}
-
-// GetGroup returns the value of Group.
-func (s *KindInfo) GetGroup() string {
-	return s.Group
-}
-
-// GetKind returns the value of Kind.
-func (s *KindInfo) GetKind() string {
-	return s.Kind
-}
-
-// SetGroup sets the value of Group.
-func (s *KindInfo) SetGroup(val string) {
-	s.Group = val
-}
-
-// SetKind sets the value of Kind.
-func (s *KindInfo) SetKind(val string) {
-	s.Kind = val
 }
 
 // NewOptDateTime returns new OptDateTime with value set to v.

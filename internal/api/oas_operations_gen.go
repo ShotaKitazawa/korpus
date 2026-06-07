@@ -15,7 +15,6 @@ const (
 	GetVolatilityFieldsOperation OperationName = "GetVolatilityFields"
 	HealthzOperation             OperationName = "Healthz"
 	ListClustersOperation        OperationName = "ListClusters"
-	ListGroupsOperation          OperationName = "ListGroups"
-	ListKindsOperation           OperationName = "ListKinds"
+	ListGVKsOperation            OperationName = "ListGVKs"
 	ListNamespacesOperation      OperationName = "ListNamespaces"
 )

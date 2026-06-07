@@ -37,11 +37,15 @@ paths:
                 items:
                   type: string
 
-  /api/groups:
+  /api/gvks:
     get:
-      operationId: ListGroups
+      operationId: ListGVKs
       parameters:
         - name: cluster
+          in: query
+          schema:
+            type: string
+        - name: namespace
           in: query
           schema:
             type: string
@@ -53,7 +57,7 @@ paths:
               schema:
                 type: array
                 items:
-                  type: string
+                  $ref: "#/components/schemas/GVKInfo"
 
   /api/namespaces:
     get:
@@ -72,32 +76,6 @@ paths:
                 type: array
                 items:
                   type: string
-
-  /api/kinds:
-    get:
-      operationId: ListKinds
-      parameters:
-        - name: cluster
-          in: query
-          schema:
-            type: string
-        - name: group
-          in: query
-          schema:
-            type: string
-        - name: namespace
-          in: query
-          schema:
-            type: string
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/KindInfo"
 
   /api/resource:
     get:
@@ -395,13 +373,16 @@ paths:
 
 components:
   schemas:
-    KindInfo:
+    GVKInfo:
       type: object
       required:
         - group
+        - version
         - kind
       properties:
         group:
+          type: string
+        version:
           type: string
         kind:
           type: string

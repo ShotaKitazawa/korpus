@@ -122,9 +122,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						return
 					}
 
-				case 'g': // Prefix: "groups"
+				case 'g': // Prefix: "gvks"
 
-					if l := len("groups"); len(elem) >= l && elem[0:l] == "groups" {
+					if l := len("gvks"); len(elem) >= l && elem[0:l] == "gvks" {
 						elem = elem[l:]
 					} else {
 						break
@@ -134,7 +134,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						// Leaf node.
 						switch r.Method {
 						case "GET":
-							s.handleListGroupsRequest([0]string{}, elemIsEscaped, w, r)
+							s.handleListGVKsRequest([0]string{}, elemIsEscaped, w, r)
 						default:
 							s.notAllowed(w, r, notAllowedParams{
 								allowedMethods: "GET",
@@ -160,31 +160,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						switch r.Method {
 						case "GET":
 							s.handleGetHistoryRequest([0]string{}, elemIsEscaped, w, r)
-						default:
-							s.notAllowed(w, r, notAllowedParams{
-								allowedMethods: "GET",
-								allowedHeaders: nil,
-								acceptPost:     "",
-								acceptPatch:    "",
-							})
-						}
-
-						return
-					}
-
-				case 'k': // Prefix: "kinds"
-
-					if l := len("kinds"); len(elem) >= l && elem[0:l] == "kinds" {
-						elem = elem[l:]
-					} else {
-						break
-					}
-
-					if len(elem) == 0 {
-						// Leaf node.
-						switch r.Method {
-						case "GET":
-							s.handleListKindsRequest([0]string{}, elemIsEscaped, w, r)
 						default:
 							s.notAllowed(w, r, notAllowedParams{
 								allowedMethods: "GET",
@@ -551,9 +526,9 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 						}
 					}
 
-				case 'g': // Prefix: "groups"
+				case 'g': // Prefix: "gvks"
 
-					if l := len("groups"); len(elem) >= l && elem[0:l] == "groups" {
+					if l := len("gvks"); len(elem) >= l && elem[0:l] == "gvks" {
 						elem = elem[l:]
 					} else {
 						break
@@ -563,11 +538,11 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 						// Leaf node.
 						switch method {
 						case "GET":
-							r.name = ListGroupsOperation
+							r.name = ListGVKsOperation
 							r.summary = ""
-							r.operationID = "ListGroups"
+							r.operationID = "ListGVKs"
 							r.operationGroup = ""
-							r.pathPattern = "/api/groups"
+							r.pathPattern = "/api/gvks"
 							r.args = args
 							r.count = 0
 							return r, true
@@ -593,31 +568,6 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 							r.operationID = "GetHistory"
 							r.operationGroup = ""
 							r.pathPattern = "/api/history"
-							r.args = args
-							r.count = 0
-							return r, true
-						default:
-							return
-						}
-					}
-
-				case 'k': // Prefix: "kinds"
-
-					if l := len("kinds"); len(elem) >= l && elem[0:l] == "kinds" {
-						elem = elem[l:]
-					} else {
-						break
-					}
-
-					if len(elem) == 0 {
-						// Leaf node.
-						switch method {
-						case "GET":
-							r.name = ListKindsOperation
-							r.summary = ""
-							r.operationID = "ListKinds"
-							r.operationGroup = ""
-							r.pathPattern = "/api/kinds"
 							r.args = args
 							r.count = 0
 							return r, true

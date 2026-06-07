@@ -2430,78 +2430,13 @@ func decodeGetVolatilityFieldsParams(args [0]string, argsEscaped bool, r *http.R
 	return params, nil
 }
 
-// ListGroupsParams is parameters of ListGroups operation.
-type ListGroupsParams struct {
-	Cluster OptString `json:",omitempty,omitzero"`
-}
-
-func unpackListGroupsParams(packed middleware.Parameters) (params ListGroupsParams) {
-	{
-		key := middleware.ParameterKey{
-			Name: "cluster",
-			In:   "query",
-		}
-		if v, ok := packed[key]; ok {
-			params.Cluster = v.(OptString)
-		}
-	}
-	return params
-}
-
-func decodeListGroupsParams(args [0]string, argsEscaped bool, r *http.Request) (params ListGroupsParams, _ error) {
-	q := uri.NewQueryDecoder(r.URL.Query())
-	// Decode query: cluster.
-	if err := func() error {
-		cfg := uri.QueryParameterDecodingConfig{
-			Name:    "cluster",
-			Style:   uri.QueryStyleForm,
-			Explode: true,
-		}
-
-		if err := q.HasParam(cfg); err == nil {
-			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
-				var paramsDotClusterVal string
-				if err := func() error {
-					val, err := d.DecodeValue()
-					if err != nil {
-						return err
-					}
-
-					c, err := conv.ToString(val)
-					if err != nil {
-						return err
-					}
-
-					paramsDotClusterVal = c
-					return nil
-				}(); err != nil {
-					return err
-				}
-				params.Cluster.SetTo(paramsDotClusterVal)
-				return nil
-			}); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "cluster",
-			In:   "query",
-			Err:  err,
-		}
-	}
-	return params, nil
-}
-
-// ListKindsParams is parameters of ListKinds operation.
-type ListKindsParams struct {
+// ListGVKsParams is parameters of ListGVKs operation.
+type ListGVKsParams struct {
 	Cluster   OptString `json:",omitempty,omitzero"`
-	Group     OptString `json:",omitempty,omitzero"`
 	Namespace OptString `json:",omitempty,omitzero"`
 }
 
-func unpackListKindsParams(packed middleware.Parameters) (params ListKindsParams) {
+func unpackListGVKsParams(packed middleware.Parameters) (params ListGVKsParams) {
 	{
 		key := middleware.ParameterKey{
 			Name: "cluster",
@@ -2509,15 +2444,6 @@ func unpackListKindsParams(packed middleware.Parameters) (params ListKindsParams
 		}
 		if v, ok := packed[key]; ok {
 			params.Cluster = v.(OptString)
-		}
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "group",
-			In:   "query",
-		}
-		if v, ok := packed[key]; ok {
-			params.Group = v.(OptString)
 		}
 	}
 	{
@@ -2532,7 +2458,7 @@ func unpackListKindsParams(packed middleware.Parameters) (params ListKindsParams
 	return params
 }
 
-func decodeListKindsParams(args [0]string, argsEscaped bool, r *http.Request) (params ListKindsParams, _ error) {
+func decodeListGVKsParams(args [0]string, argsEscaped bool, r *http.Request) (params ListGVKsParams, _ error) {
 	q := uri.NewQueryDecoder(r.URL.Query())
 	// Decode query: cluster.
 	if err := func() error {
@@ -2571,47 +2497,6 @@ func decodeListKindsParams(args [0]string, argsEscaped bool, r *http.Request) (p
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "cluster",
-			In:   "query",
-			Err:  err,
-		}
-	}
-	// Decode query: group.
-	if err := func() error {
-		cfg := uri.QueryParameterDecodingConfig{
-			Name:    "group",
-			Style:   uri.QueryStyleForm,
-			Explode: true,
-		}
-
-		if err := q.HasParam(cfg); err == nil {
-			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
-				var paramsDotGroupVal string
-				if err := func() error {
-					val, err := d.DecodeValue()
-					if err != nil {
-						return err
-					}
-
-					c, err := conv.ToString(val)
-					if err != nil {
-						return err
-					}
-
-					paramsDotGroupVal = c
-					return nil
-				}(); err != nil {
-					return err
-				}
-				params.Group.SetTo(paramsDotGroupVal)
-				return nil
-			}); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "group",
 			In:   "query",
 			Err:  err,
 		}

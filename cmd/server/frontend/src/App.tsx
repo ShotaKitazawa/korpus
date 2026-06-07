@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { api, type SnapshotResource, type KindInfo } from "./api.ts"
+import { api, type SnapshotResource, type GVKInfo } from "./api.ts"
 import VolatilityView from "./components/VolatilityView.tsx"
 import ClusterList from "./components/ClusterList.tsx"
 import KindSelect from "./components/KindSelect.tsx"
@@ -25,6 +25,7 @@ function readIntParam(key: string, fallback: number): number {
 function syncUrl(state: {
   cluster: string
   group: string
+  version: string
   namespace: string
   kind: string
   q: string
@@ -35,6 +36,7 @@ function syncUrl(state: {
   const params = new URLSearchParams()
   if (state.cluster) params.set("cluster", state.cluster)
   if (state.group) params.set("group", state.group)
+  if (state.version) params.set("version", state.version)
   if (state.namespace) params.set("namespace", state.namespace)
   if (state.kind) params.set("kind", state.kind)
   if (state.q) params.set("q", state.q)
@@ -59,11 +61,14 @@ export default function App() {
     readParam("cluster"),
   )
   const [selectedGroup, setSelectedGroup] = useState(() => readParam("group"))
+  const [selectedVersion, setSelectedVersion] = useState(() =>
+    readParam("version"),
+  )
   const [namespaces, setNamespaces] = useState<string[]>([])
   const [selectedNamespace, setSelectedNamespace] = useState(() =>
     readParam("namespace"),
   )
-  const [kinds, setKinds] = useState<KindInfo[]>([])
+  const [gvks, setGVKs] = useState<GVKInfo[]>([])
   const [selectedKind, setSelectedKind] = useState(() => readParam("kind"))
   const [resources, setResources] = useState<SnapshotResource[]>([])
   const [total, setTotal] = useState(0)
@@ -101,7 +106,7 @@ export default function App() {
 
   useEffect(() => {
     api
-      .GET("/api/kinds", {
+      .GET("/api/gvks", {
         params: {
           query: {
             cluster: selectedCluster || undefined,
@@ -110,7 +115,7 @@ export default function App() {
         },
       })
       .then(({ data }) => {
-        if (data) setKinds(data)
+        if (data) setGVKs(data)
       })
   }, [selectedCluster, selectedNamespace])
 
@@ -220,6 +225,7 @@ export default function App() {
     syncUrl({
       cluster: selectedCluster,
       group: selectedGroup,
+      version: selectedVersion,
       namespace: selectedNamespace,
       kind: selectedKind,
       q: searchQuery,
@@ -230,6 +236,7 @@ export default function App() {
   }, [
     selectedCluster,
     selectedGroup,
+    selectedVersion,
     selectedNamespace,
     selectedKind,
     searchQuery,
@@ -259,6 +266,7 @@ export default function App() {
           onSelect={(c) => {
             setSelectedCluster(c)
             setSelectedGroup("")
+            setSelectedVersion("")
             setSelectedNamespace("")
             setSelectedKind("")
             setSearchQuery("")
@@ -299,10 +307,15 @@ export default function App() {
           }}
         >
           <KindSelect
-            kinds={kinds}
-            value={selectedKind ? `${selectedGroup}/${selectedKind}` : ""}
+            gvks={gvks}
+            value={
+              selectedKind
+                ? `${selectedGroup}/${selectedVersion}/${selectedKind}`
+                : ""
+            }
             onChange={(info) => {
               setSelectedGroup(info?.group ?? "")
+              setSelectedVersion(info?.version ?? "")
               setSelectedKind(info?.kind ?? "")
               setOffset(0)
               resetFilters()
@@ -340,6 +353,7 @@ export default function App() {
           <VolatilityView
             onSelectResource={(group, kind) => {
               setSelectedGroup(group)
+              setSelectedVersion("")
               setSelectedKind(kind)
               setOffset(0)
               setSelected(null)

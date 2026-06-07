@@ -52,14 +52,14 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  "/api/groups": {
+  "/api/gvks": {
     parameters: {
       query?: never
       header?: never
       path?: never
       cookie?: never
     }
-    get: operations["ListGroups"]
+    get: operations["ListGVKs"]
     put?: never
     post?: never
     delete?: never
@@ -76,22 +76,6 @@ export interface paths {
       cookie?: never
     }
     get: operations["ListNamespaces"]
-    put?: never
-    post?: never
-    delete?: never
-    options?: never
-    head?: never
-    patch?: never
-    trace?: never
-  }
-  "/api/kinds": {
-    parameters: {
-      query?: never
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    get: operations["ListKinds"]
     put?: never
     post?: never
     delete?: never
@@ -200,8 +184,9 @@ export interface paths {
 export type webhooks = Record<string, never>
 export interface components {
   schemas: {
-    KindInfo: {
+    GVKInfo: {
       group: string
+      version: string
       kind: string
     }
     SnapshotResource: {
@@ -352,10 +337,11 @@ export interface operations {
       }
     }
   }
-  ListGroups: {
+  ListGVKs: {
     parameters: {
       query?: {
         cluster?: string
+        namespace?: string
       }
       header?: never
       path?: never
@@ -369,7 +355,7 @@ export interface operations {
           [name: string]: unknown
         }
         content: {
-          "application/json": string[]
+          "application/json": components["schemas"]["GVKInfo"][]
         }
       }
     }
@@ -392,30 +378,6 @@ export interface operations {
         }
         content: {
           "application/json": string[]
-        }
-      }
-    }
-  }
-  ListKinds: {
-    parameters: {
-      query?: {
-        cluster?: string
-        group?: string
-        namespace?: string
-      }
-      header?: never
-      path?: never
-      cookie?: never
-    }
-    requestBody?: never
-    responses: {
-      /** @description OK */
-      200: {
-        headers: {
-          [name: string]: unknown
-        }
-        content: {
-          "application/json": components["schemas"]["KindInfo"][]
         }
       }
     }

@@ -14,16 +14,18 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// KindInfo pairs an API group with a resource kind.
-type KindInfo struct {
-	Group string `json:"group"`
-	Kind  string `json:"kind"`
+// GVKInfo identifies a Kubernetes resource type by Group, Version, and Kind.
+type GVKInfo struct {
+	Group   string `json:"group"`
+	Version string `json:"version"`
+	Kind    string `json:"kind"`
 }
 
 // ResourceMeta holds the identifying metadata of a single K8s resource.
 type ResourceMeta struct {
 	Cluster           string            `json:"cluster"`
 	Group             string            `json:"group"`
+	Version           string            `json:"version"`
 	Kind              string            `json:"kind"`
 	Name              string            `json:"name"`
 	Namespace         string            `json:"namespace"`
@@ -101,6 +103,7 @@ func (idx *Index) Build(dir string) error {
 			if group == "" {
 				group = groupFromAPIVersion(raw)
 			}
+			version := versionFromAPIVersion(raw)
 
 			indexedFields := make(map[string]any, len(idx.fields))
 			for _, field := range idx.fields {
@@ -112,6 +115,7 @@ func (idx *Index) Build(dir string) error {
 			result = append(result, ResourceMeta{
 				Cluster:           idx.cluster,
 				Group:             group,
+				Version:           version,
 				Kind:              kind,
 				Name:              name,
 				Namespace:         namespace,
@@ -159,45 +163,42 @@ func groupFromAPIVersion(raw map[string]any) string {
 	return av[:strings.LastIndex(av, "/")]
 }
 
-// Groups returns the sorted unique list of API groups in the index.
-func (idx *Index) Groups() []string {
-	idx.mu.RLock()
-	defer idx.mu.RUnlock()
-	seen := make(map[string]struct{})
-	for _, r := range idx.resources {
-		seen[r.Group] = struct{}{}
+// versionFromAPIVersion derives a version string from the YAML apiVersion field.
+// "v1" → "v1"; "apps/v1" → "v1".
+func versionFromAPIVersion(raw map[string]any) string {
+	av, _ := raw["apiVersion"].(string)
+	if av == "" {
+		return ""
 	}
-	result := make([]string, 0, len(seen))
-	for g := range seen {
-		result = append(result, g)
+	if !strings.Contains(av, "/") {
+		return av
 	}
-	sort.Strings(result)
-	return result
+	return av[strings.LastIndex(av, "/")+1:]
 }
 
-// Kinds returns the sorted unique list of KindInfo in the index,
-// optionally filtered by namespace and/or group.
-func (idx *Index) Kinds(namespace, group string) []KindInfo {
+// GVKs returns the sorted unique list of GVKInfo in the index,
+// optionally filtered by namespace.
+func (idx *Index) GVKs(namespace string) []GVKInfo {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
-	type key struct{ g, k string }
+	type key struct{ g, v, k string }
 	seen := make(map[key]struct{})
 	for _, r := range idx.resources {
 		if namespace != "" && r.Namespace != namespace {
 			continue
 		}
-		if group != "" && !strings.EqualFold(r.Group, group) {
-			continue
-		}
-		seen[key{r.Group, r.Kind}] = struct{}{}
+		seen[key{r.Group, r.Version, r.Kind}] = struct{}{}
 	}
-	result := make([]KindInfo, 0, len(seen))
+	result := make([]GVKInfo, 0, len(seen))
 	for k := range seen {
-		result = append(result, KindInfo{Group: k.g, Kind: k.k})
+		result = append(result, GVKInfo{Group: k.g, Version: k.v, Kind: k.k})
 	}
 	sort.Slice(result, func(i, j int) bool {
 		if result[i].Group != result[j].Group {
 			return result[i].Group < result[j].Group
+		}
+		if result[i].Version != result[j].Version {
+			return result[i].Version < result[j].Version
 		}
 		return result[i].Kind < result[j].Kind
 	})

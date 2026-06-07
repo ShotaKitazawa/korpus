@@ -112,38 +112,26 @@ func TestBuild_GroupFromAPIVersion(t *testing.T) {
 	assert.Equal(t, "apps", dep.Group)
 }
 
-func TestGroups(t *testing.T) {
-	_, idx := setup(t)
-	groups := idx.Groups()
-	assert.ElementsMatch(t, []string{"apps", "core"}, groups)
-}
-
 func TestNamespaces(t *testing.T) {
 	_, idx := setup(t)
 	ns := idx.Namespaces()
 	assert.ElementsMatch(t, []string{"default", "kube-system"}, ns)
 }
 
-func TestKinds_All(t *testing.T) {
+func TestGVKs_All(t *testing.T) {
 	_, idx := setup(t)
-	kinds := idx.Kinds("", "")
-	assert.ElementsMatch(t, []KindInfo{
-		{Group: "apps", Kind: "Deployment"},
-		{Group: "core", Kind: "Node"},
-		{Group: "core", Kind: "Pod"},
-	}, kinds)
+	gvks := idx.GVKs("")
+	assert.ElementsMatch(t, []GVKInfo{
+		{Group: "apps", Version: "v1", Kind: "Deployment"},
+		{Group: "core", Version: "v1", Kind: "Node"},
+		{Group: "core", Version: "v1", Kind: "Pod"},
+	}, gvks)
 }
 
-func TestKinds_ByNamespace(t *testing.T) {
+func TestGVKs_ByNamespace(t *testing.T) {
 	_, idx := setup(t)
-	kinds := idx.Kinds("default", "")
-	assert.ElementsMatch(t, []KindInfo{{Group: "core", Kind: "Pod"}}, kinds)
-}
-
-func TestKinds_ByGroup(t *testing.T) {
-	_, idx := setup(t)
-	kinds := idx.Kinds("", "apps")
-	assert.ElementsMatch(t, []KindInfo{{Group: "apps", Kind: "Deployment"}}, kinds)
+	gvks := idx.GVKs("default")
+	assert.ElementsMatch(t, []GVKInfo{{Group: "core", Version: "v1", Kind: "Pod"}}, gvks)
 }
 
 func TestList_ByKind(t *testing.T) {

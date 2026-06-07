@@ -16,6 +16,11 @@ beforeEach(() => {
           new Response(JSON.stringify(["prod", "staging"]), { status: 200 }),
         )
       }
+      if (url.includes("/api/gvks")) {
+        return Promise.resolve(
+          new Response(JSON.stringify([]), { status: 200 }),
+        )
+      }
       if (url.includes("/api/snapshot")) {
         return Promise.resolve(
           new Response(
@@ -32,7 +37,7 @@ beforeEach(() => {
 describe("App", () => {
   it("renders without crashing", async () => {
     render(<App />)
-    expect(screen.getByPlaceholderText("group/kind")).toBeTruthy()
+    expect(screen.getByPlaceholderText("group/version/kind")).toBeTruthy()
     expect(screen.getByPlaceholderText("CEL expression…")).toBeTruthy()
   })
 })
