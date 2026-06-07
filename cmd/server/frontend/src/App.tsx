@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react"
 import { api, type SnapshotResource, type KindInfo } from "./api.ts"
-import ChurnView from "./components/ChurnView.tsx"
+import VolatilityView from "./components/VolatilityView.tsx"
 import ClusterList from "./components/ClusterList.tsx"
+import GroupList from "./components/GroupList.tsx"
 import KindSelect from "./components/KindSelect.tsx"
-import LabelFilter from "./components/LabelFilter.tsx"
 import NamespaceList from "./components/NamespaceList.tsx"
 import ResourceDetail from "./components/ResourceDetail.tsx"
 import ResourceList from "./components/ResourceList.tsx"
@@ -25,9 +25,9 @@ function readIntParam(key: string, fallback: number): number {
 
 function syncUrl(state: {
   cluster: string
+  group: string
   namespace: string
   kind: string
-  labels: string
   q: string
   offset: number
   selected: SnapshotResource | null
@@ -35,9 +35,9 @@ function syncUrl(state: {
 }) {
   const params = new URLSearchParams()
   if (state.cluster) params.set("cluster", state.cluster)
+  if (state.group) params.set("group", state.group)
   if (state.namespace) params.set("namespace", state.namespace)
   if (state.kind) params.set("kind", state.kind)
-  if (state.labels) params.set("labels", state.labels)
   if (state.q) params.set("q", state.q)
   if (state.offset > 0) params.set("offset", String(state.offset))
   if (state.view && state.view !== "resources") params.set("view", state.view)
@@ -59,21 +59,22 @@ export default function App() {
   const [selectedCluster, setSelectedCluster] = useState(() =>
     readParam("cluster"),
   )
+  const [groups, setGroups] = useState<string[]>([])
+  const [selectedGroup, setSelectedGroup] = useState(() => readParam("group"))
   const [namespaces, setNamespaces] = useState<string[]>([])
   const [selectedNamespace, setSelectedNamespace] = useState(() =>
     readParam("namespace"),
   )
   const [kinds, setKinds] = useState<KindInfo[]>([])
   const [selectedKind, setSelectedKind] = useState(() => readParam("kind"))
-  const [labelFilter, setLabelFilter] = useState(() => readParam("labels"))
   const [resources, setResources] = useState<SnapshotResource[]>([])
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(() => readIntParam("offset", 0))
   const [selected, setSelected] = useState<SnapshotResource | null>(null)
   const [detail, setDetail] = useState("")
   const [searchQuery, setSearchQuery] = useState(() => readParam("q"))
-  const [view, setView] = useState<"resources" | "churn">(() =>
-    readParam("view") === "churn" ? "churn" : "resources",
+  const [view, setView] = useState<"resources" | "volatility">(() =>
+    readParam("view") === "volatility" ? "volatility" : "resources",
   )
 
   const pendingSelect = useRef({
@@ -92,6 +93,16 @@ export default function App() {
 
   useEffect(() => {
     api
+      .GET("/api/groups", {
+        params: { query: { cluster: selectedCluster || undefined } },
+      })
+      .then(({ data }) => {
+        if (data) setGroups(data)
+      })
+  }, [selectedCluster])
+
+  useEffect(() => {
+    api
       .GET("/api/namespaces", {
         params: { query: { cluster: selectedCluster || undefined } },
       })
@@ -106,6 +117,7 @@ export default function App() {
         params: {
           query: {
             cluster: selectedCluster || undefined,
+            group: selectedGroup || undefined,
             namespace: selectedNamespace || undefined,
           },
         },
@@ -113,7 +125,7 @@ export default function App() {
       .then(({ data }) => {
         if (data) setKinds(data)
       })
-  }, [selectedCluster, selectedNamespace])
+  }, [selectedCluster, selectedGroup, selectedNamespace])
 
   useEffect(() => {
     let cancelled = false
@@ -124,8 +136,9 @@ export default function App() {
           .GET("/api/snapshot", {
             params: {
               query: {
-                kind: selectedKind || undefined,
                 cluster: selectedCluster || undefined,
+                group: selectedGroup || undefined,
+                kind: selectedKind || undefined,
                 namespace: selectedNamespace || undefined,
                 cel: searchQuery || undefined,
                 offset,
@@ -143,6 +156,7 @@ export default function App() {
           params: {
             query: {
               cluster: selectedCluster || undefined,
+              group: selectedGroup || undefined,
               kind: selectedKind || undefined,
               namespace: selectedNamespace || undefined,
               offset,
@@ -187,10 +201,10 @@ export default function App() {
     }
   }, [
     selectedCluster,
+    selectedGroup,
     selectedNamespace,
     selectedKind,
     searchQuery,
-    labelFilter,
     offset,
   ])
 
@@ -218,9 +232,9 @@ export default function App() {
   useEffect(() => {
     syncUrl({
       cluster: selectedCluster,
+      group: selectedGroup,
       namespace: selectedNamespace,
       kind: selectedKind,
-      labels: labelFilter,
       q: searchQuery,
       offset,
       selected,
@@ -228,9 +242,9 @@ export default function App() {
     })
   }, [
     selectedCluster,
+    selectedGroup,
     selectedNamespace,
     selectedKind,
-    labelFilter,
     searchQuery,
     offset,
     selected,
@@ -257,8 +271,31 @@ export default function App() {
           selected={selectedCluster}
           onSelect={(c) => {
             setSelectedCluster(c)
+            setSelectedGroup("")
             setSelectedNamespace("")
+            setSelectedKind("")
             setSearchQuery("")
+            setOffset(0)
+            setSelected(null)
+          }}
+        />
+        <div
+          style={{
+            borderTop: "1px solid #eee",
+            marginTop: 8,
+            paddingTop: 4,
+            fontSize: "0.75em",
+            color: "#888",
+          }}
+        >
+          group
+        </div>
+        <GroupList
+          groups={groups}
+          selected={selectedGroup}
+          onSelect={(g) => {
+            setSelectedGroup(g)
+            setSelectedKind("")
             setOffset(0)
             setSelected(null)
           }}
@@ -304,14 +341,6 @@ export default function App() {
               resetFilters()
             }}
           />
-          <LabelFilter
-            value={labelFilter}
-            onChange={(v) => {
-              setLabelFilter(v)
-              setOffset(0)
-              resetFilters()
-            }}
-          />
           <SearchBar
             query={searchQuery}
             onChange={(q) => {
@@ -321,14 +350,16 @@ export default function App() {
             }}
           />
           <button
-            onClick={() => setView(view === "churn" ? "resources" : "churn")}
+            onClick={() =>
+              setView(view === "volatility" ? "resources" : "volatility")
+            }
             style={{
               fontFamily: "monospace",
               fontSize: 12,
               cursor: "pointer",
               padding: "2px 10px",
-              background: view === "churn" ? "#333" : undefined,
-              color: view === "churn" ? "#fff" : undefined,
+              background: view === "volatility" ? "#333" : undefined,
+              color: view === "volatility" ? "#fff" : undefined,
               border: "1px solid #ccc",
               borderRadius: 2,
               marginLeft: "auto",
@@ -338,9 +369,10 @@ export default function App() {
           </button>
         </div>
 
-        {view === "churn" ? (
-          <ChurnView
-            onSelectKind={(kind) => {
+        {view === "volatility" ? (
+          <VolatilityView
+            onSelectResource={(group, kind) => {
+              setSelectedGroup(group)
               setSelectedKind(kind)
               setOffset(0)
               setSelected(null)
