@@ -235,6 +235,35 @@ func TestResolveExcludeFields_Override(t *testing.T) {
 		ResolveExcludeFields(cfg, "pods", ""))
 }
 
+func TestResolveExcludeFields_BuiltinAppended(t *testing.T) {
+	cfg := &KorpusConfig{
+		Spec: KorpusSpec{
+			Backup: BackupConfig{
+				DefaultExcludeFields: []string{"metadata.resourceVersion"},
+			},
+		},
+	}
+	// applications.argoproj.io gets builtin status.reconciledAt appended
+	fields := ResolveExcludeFields(cfg, "applications", "argoproj.io")
+	assert.Contains(t, fields, "metadata.resourceVersion")
+	assert.Contains(t, fields, "status.reconciledAt")
+	// unrelated resources are unaffected
+	assert.NotContains(t, ResolveExcludeFields(cfg, "deployments", "apps"), "status.reconciledAt")
+}
+
+func TestResolveExcludeFields_BuiltinDisabled(t *testing.T) {
+	cfg := &KorpusConfig{
+		Spec: KorpusSpec{
+			Backup: BackupConfig{
+				DefaultExcludeFields:   []string{"metadata.resourceVersion"},
+				DisableBuiltinExcludes: true,
+			},
+		},
+	}
+	fields := ResolveExcludeFields(cfg, "applications", "argoproj.io")
+	assert.NotContains(t, fields, "status.reconciledAt")
+}
+
 func baseServerYAML() string {
 	return `
 kind: ServerConfig

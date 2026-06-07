@@ -227,14 +227,31 @@ func IsExcluded(cfg *KorpusConfig, resource, group string) bool {
 
 // ResolveExcludeFields returns the field paths to strip for a given resource.
 // A per-resource excludeFields completely replaces defaultExcludeFields.
+// Built-in field exclusions (BuiltinExcludeFields) are always appended unless
+// disableBuiltinExcludes is true.
 func ResolveExcludeFields(cfg *KorpusConfig, resource, group string) []string {
 	key := resourceKey(resource, group)
+	var fields []string
 	for _, rc := range cfg.Spec.Backup.Resources {
 		if rc.Match == key || rc.Match == resource {
 			if rc.ExcludeFields != nil {
-				return rc.ExcludeFields
+				fields = rc.ExcludeFields
+				break
 			}
 		}
 	}
-	return cfg.Spec.Backup.DefaultExcludeFields
+	if fields == nil {
+		fields = cfg.Spec.Backup.DefaultExcludeFields
+	}
+	if !cfg.Spec.Backup.DisableBuiltinExcludes {
+		for k, builtinFields := range defaults.BuiltinExcludeFields {
+			if k == key || k == resource {
+				merged := make([]string, len(fields), len(fields)+len(builtinFields))
+				copy(merged, fields)
+				fields = append(merged, builtinFields...)
+				break
+			}
+		}
+	}
+	return fields
 }
