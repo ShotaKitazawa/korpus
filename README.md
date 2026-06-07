@@ -115,7 +115,7 @@ Pulls the backup repo every `server.pullInterval` (default: `10m`) and rebuilds 
 | `GET /api/diff?cluster=&group=&kind=&namespace=&name=&from=&to=` | YAML diff between two commits |
 | `GET /api/volatility?cluster=&group=&kind=&namespace=&commits=&threshold=&limit=&offset=` | Resources ranked by change frequency |
 | `GET /api/volatility/fields?cluster=&group=&kind=&namespace=&name=&commits=` | Field-level change frequency for a resource |
-| `POST /mcp` | MCP server (HTTP SSE) |
+| `POST /mcp` | MCP server (Streamable HTTP) |
 
 **CEL expression examples** (used in `cel=` parameter of `/api/snapshot`):
 
@@ -126,6 +126,30 @@ object.status.phase == "Running"
 ```
 
 **MCP tools:** `list_clusters`, `list_groups`, `list_kinds`, `list_namespaces`, `get_resource`, `get_snapshot`, `get_history`, `get_diff`, `get_volatility`, `get_volatility_fields`
+
+**Connecting via MCP:**
+
+Claude Code:
+```bash
+claude mcp add --transport http korpus http://localhost:8080/mcp
+```
+
+Claude Desktop (`claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "korpus": {
+      "url": "http://localhost:8080/mcp"
+    }
+  }
+}
+```
+
+When OIDC is enabled, pass the bearer token via a header:
+```bash
+claude mcp add --transport http korpus http://localhost:8080/mcp \
+  --header "Authorization: Bearer <token>"
+```
 
 ### config reference
 
