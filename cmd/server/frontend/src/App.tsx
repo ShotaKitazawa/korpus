@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react"
 import { api, type SnapshotResource, type KindInfo } from "./api.ts"
 import VolatilityView from "./components/VolatilityView.tsx"
 import ClusterList from "./components/ClusterList.tsx"
-import GroupList from "./components/GroupList.tsx"
 import KindSelect from "./components/KindSelect.tsx"
 import NamespaceList from "./components/NamespaceList.tsx"
 import ResourceDetail from "./components/ResourceDetail.tsx"
@@ -59,7 +58,6 @@ export default function App() {
   const [selectedCluster, setSelectedCluster] = useState(() =>
     readParam("cluster"),
   )
-  const [groups, setGroups] = useState<string[]>([])
   const [selectedGroup, setSelectedGroup] = useState(() => readParam("group"))
   const [namespaces, setNamespaces] = useState<string[]>([])
   const [selectedNamespace, setSelectedNamespace] = useState(() =>
@@ -93,16 +91,6 @@ export default function App() {
 
   useEffect(() => {
     api
-      .GET("/api/groups", {
-        params: { query: { cluster: selectedCluster || undefined } },
-      })
-      .then(({ data }) => {
-        if (data) setGroups(data)
-      })
-  }, [selectedCluster])
-
-  useEffect(() => {
-    api
       .GET("/api/namespaces", {
         params: { query: { cluster: selectedCluster || undefined } },
       })
@@ -117,7 +105,6 @@ export default function App() {
         params: {
           query: {
             cluster: selectedCluster || undefined,
-            group: selectedGroup || undefined,
             namespace: selectedNamespace || undefined,
           },
         },
@@ -125,7 +112,7 @@ export default function App() {
       .then(({ data }) => {
         if (data) setKinds(data)
       })
-  }, [selectedCluster, selectedGroup, selectedNamespace])
+  }, [selectedCluster, selectedNamespace])
 
   useEffect(() => {
     let cancelled = false
@@ -288,27 +275,6 @@ export default function App() {
             color: "#888",
           }}
         >
-          group
-        </div>
-        <GroupList
-          groups={groups}
-          selected={selectedGroup}
-          onSelect={(g) => {
-            setSelectedGroup(g)
-            setSelectedKind("")
-            setOffset(0)
-            setSelected(null)
-          }}
-        />
-        <div
-          style={{
-            borderTop: "1px solid #eee",
-            marginTop: 8,
-            paddingTop: 4,
-            fontSize: "0.75em",
-            color: "#888",
-          }}
-        >
           namespace
         </div>
         <NamespaceList
@@ -334,9 +300,10 @@ export default function App() {
         >
           <KindSelect
             kinds={kinds}
-            value={selectedKind}
-            onChange={(k) => {
-              setSelectedKind(k)
+            value={selectedKind ? `${selectedGroup}/${selectedKind}` : ""}
+            onChange={(info) => {
+              setSelectedGroup(info?.group ?? "")
+              setSelectedKind(info?.kind ?? "")
               setOffset(0)
               resetFilters()
             }}
