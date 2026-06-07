@@ -11,7 +11,7 @@ korpus snapshots every Kubernetes resource as YAML and commits it to Git, stripp
 korpus consists of two binaries:
 
 - **korpus** — backup daemon that maintains the Information Base.
-- **server** — read-only viewer that periodically pulls the backup repo and serves a React SPA, a REST API, and an MCP server over HTTP SSE, making the Information Base queryable with CEL expressions and accessible to AI agents.
+- **server** — read-only viewer that periodically pulls the backup repo and serves a React SPA, a REST API, and an MCP server over Streamable HTTP, making the Information Base queryable with CEL expressions and accessible to AI agents.
 
 ## Quickstart
 
@@ -237,6 +237,11 @@ spec:
       # Add fields here to avoid disk I/O on queries that reference them:
       # - spec.nodeName
       # - spec.replicas
+  # Optional: enable OIDC authentication
+  # oidc:
+  #   issuer: https://your-idp.example.com/
+  #   audience: https://korpus.example.com
+  #   clientId: <your-client-id>
 ```
 
 `${VAR}` placeholders in config values are expanded from environment variables at startup. Undefined variables cause a startup error.
