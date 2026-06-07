@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -18,6 +19,7 @@ import (
 
 	"embed"
 
+	git "github.com/go-git/go-git/v5"
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
@@ -27,6 +29,7 @@ import (
 	"github.com/ShotaKitazawa/korpus/internal/gitindex"
 	"github.com/ShotaKitazawa/korpus/internal/index"
 	oidcmw "github.com/ShotaKitazawa/korpus/internal/oidc"
+	"github.com/ShotaKitazawa/korpus/internal/query"
 )
 
 //go:embed all:frontend/dist
@@ -46,6 +49,49 @@ type ClusterState struct {
 	lastPullErr   string
 	resourceCount int
 }
+
+// --- query.ClusterQuerier implementation ---
+
+func (s *ClusterState) Index() *index.Index { return s.idx }
+
+func (s *ClusterState) CommitIndex() *gitindex.CommitIndex {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.commitIdx
+}
+
+func (s *ClusterState) ChangeIndex() *gitindex.ChangeIndex {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.changeIdx
+}
+
+func (s *ClusterState) FileAt(relPath, sha string) (string, error) {
+	return s.fileAt(relPath, sha)
+}
+
+func (s *ClusterState) RelPath(absPath string) string {
+	return s.relPath(absPath)
+}
+
+func (s *ClusterState) GitRepo() *git.Repository {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.gc == nil {
+		return nil
+	}
+	return s.gc.Repo()
+}
+
+func (s *ClusterState) SubDir() string { return s.subDir }
+
+func (s *ClusterState) WorkDir() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.workDir
+}
+
+// --- lifecycle methods ---
 
 func (s *ClusterState) setGit(gc *gitclient.Client, workDir string) {
 	s.mu.Lock()
@@ -269,9 +315,17 @@ func buildMux(ctx context.Context, cfg *config.ServerConfig, states map[string]*
 	_ = ctx
 	mux := http.NewServeMux()
 
+	// Build the shared query server used by both REST and MCP.
+	clusters := make(map[string]query.ClusterQuerier, len(states))
+	for name, st := range states {
+		clusters[name] = st
+	}
+	q := query.New(clusters, clusterNames)
+
 	ogenSrv, err := api.NewServer(&apiHandler{
 		states:       states,
 		clusterNames: clusterNames,
+		q:            q,
 	})
 	if err != nil {
 		panic(fmt.Sprintf("create api server: %v", err))
@@ -284,7 +338,7 @@ func buildMux(ctx context.Context, cfg *config.ServerConfig, states map[string]*
 
 	// Protected routes (JWT middleware when OIDC is configured).
 	mux.Handle("/api/", maybeProtect(oidcMW, ogenSrv))
-	mux.Handle("/mcp", maybeProtect(oidcMW, buildMCPServer(states, clusterNames)))
+	mux.Handle("/mcp", maybeProtect(oidcMW, buildMCPServer(q)))
 
 	// Frontend SPA.
 	distFS, err := fs.Sub(frontendDist, "frontend/dist")
@@ -309,27 +363,13 @@ func buildMux(ctx context.Context, cfg *config.ServerConfig, states map[string]*
 	return mux
 }
 
-func buildMCPServer(states map[string]*ClusterState, clusterNames []string) http.Handler {
+func buildMCPServer(q *query.Server) http.Handler {
 	s := mcpserver.NewMCPServer("korpus", "2.0.0")
-
-	resolveStates := func(cluster string) []*ClusterState {
-		if cluster != "" {
-			if st, ok := states[cluster]; ok {
-				return []*ClusterState{st}
-			}
-			return nil
-		}
-		out := make([]*ClusterState, 0, len(clusterNames))
-		for _, name := range clusterNames {
-			out = append(out, states[name])
-		}
-		return out
-	}
 
 	s.AddTool(mcp.NewTool("list_clusters",
 		mcp.WithDescription("List all available cluster names"),
 	), func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		return mcp.NewToolResultText(mustJSON(clusterNames)), nil
+		return mcp.NewToolResultText(mustJSON(q.ListClusters())), nil
 	})
 
 	s.AddTool(mcp.NewTool("list_gvks",
@@ -340,22 +380,9 @@ func buildMCPServer(states map[string]*ClusterState, clusterNames []string) http
 		args := req.GetArguments()
 		cluster, _ := args["cluster"].(string)
 		ns, _ := args["namespace"].(string)
-		type gvkInfo struct {
-			Group   string `json:"group"`
-			Version string `json:"version"`
-			Kind    string `json:"kind"`
-		}
-		type key struct{ g, v, k string }
-		seen := make(map[key]struct{})
-		var result []gvkInfo
-		for _, st := range resolveStates(cluster) {
-			for _, gvk := range st.idx.GVKs(ns) {
-				k := key{gvk.Group, gvk.Version, gvk.Kind}
-				if _, ok := seen[k]; !ok {
-					seen[k] = struct{}{}
-					result = append(result, gvkInfo{Group: gvk.Group, Version: gvk.Version, Kind: gvk.Kind})
-				}
-			}
+		result, err := q.ListGVKs(cluster, ns)
+		if err != nil {
+			return mcp.NewToolResultText(err.Error()), nil
 		}
 		return mcp.NewToolResultText(mustJSON(result)), nil
 	})
@@ -366,15 +393,9 @@ func buildMCPServer(states map[string]*ClusterState, clusterNames []string) http
 	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		cluster, _ := args["cluster"].(string)
-		seen := make(map[string]struct{})
-		for _, st := range resolveStates(cluster) {
-			for _, ns := range st.idx.Namespaces() {
-				seen[ns] = struct{}{}
-			}
-		}
-		result := make([]string, 0, len(seen))
-		for ns := range seen {
-			result = append(result, ns)
+		result, err := q.ListNamespaces(cluster)
+		if err != nil {
+			return mcp.NewToolResultText(err.Error()), nil
 		}
 		return mcp.NewToolResultText(mustJSON(result)), nil
 	})
@@ -393,16 +414,14 @@ func buildMCPServer(states map[string]*ClusterState, clusterNames []string) http
 		kind, _ := args["kind"].(string)
 		ns, _ := args["namespace"].(string)
 		name, _ := args["name"].(string)
-		st, ok := states[cluster]
-		if !ok {
-			return mcp.NewToolResultText("cluster not found"), nil
-		}
-		meta, ok := st.idx.Get(group, kind, ns, name)
-		if !ok {
-			return mcp.NewToolResultText("not found"), nil
-		}
-		data, err := os.ReadFile(meta.FilePath)
+		data, err := q.GetResource(cluster, group, kind, ns, name)
 		if err != nil {
+			if errors.Is(err, query.ErrClusterNotFound) {
+				return mcp.NewToolResultText("cluster not found"), nil
+			}
+			if errors.Is(err, query.ErrNotFound) {
+				return mcp.NewToolResultText("not found"), nil
+			}
 			return nil, err
 		}
 		return mcp.NewToolResultText(string(data)), nil
@@ -427,34 +446,36 @@ func buildMCPServer(states map[string]*ClusterState, clusterNames []string) http
 		ns, _ := args["namespace"].(string)
 		name, _ := args["name"].(string)
 		cel, _ := args["cel"].(string)
+		datetimeStr, _ := args["datetime"].(string)
 		limit := 50
 		if lv, ok := args["limit"].(float64); ok && lv > 0 {
 			limit = int(lv)
 		}
-
-		var all []index.ResourceMeta
-		for _, st := range resolveStates(cluster) {
-			var results []index.ResourceMeta
-			var err error
-			if cel != "" {
-				results, err = st.idx.Query(group, kind, ns, nil, cel)
-				if err != nil {
-					return mcp.NewToolResultText("cel error: " + err.Error()), nil
-				}
-			} else {
-				results = st.idx.List(group, kind, ns, nil)
-			}
-			if name != "" {
-				for _, r := range results {
-					if r.Name == name {
-						all = append(all, r)
-					}
-				}
-			} else {
-				all = append(all, results...)
-			}
+		offset := 0
+		if ov, ok := args["offset"].(float64); ok && ov >= 0 {
+			offset = int(ov)
 		}
-		return mcp.NewToolResultText(mustJSON(all[:min(limit, len(all))])), nil
+
+		if datetimeStr != "" {
+			if cel != "" {
+				return mcp.NewToolResultText("cel filter is not supported with datetime"), nil
+			}
+			t, err := time.Parse(time.RFC3339, datetimeStr)
+			if err != nil {
+				return mcp.NewToolResultText("invalid datetime: " + err.Error()), nil
+			}
+			result, err := q.GetHistoricalSnapshot(t, cluster, group, kind, ns, name, limit, offset)
+			if err != nil {
+				return mcp.NewToolResultText(err.Error()), nil
+			}
+			return mcp.NewToolResultText(mustJSON(result.Items)), nil
+		}
+
+		result, err := q.GetCurrentSnapshot(cluster, group, kind, ns, name, cel, nil, limit, offset)
+		if err != nil {
+			return mcp.NewToolResultText("cel error: " + err.Error()), nil
+		}
+		return mcp.NewToolResultText(mustJSON(result.Items)), nil
 	})
 
 	s.AddTool(mcp.NewTool("get_history",
@@ -468,6 +489,7 @@ func buildMCPServer(states map[string]*ClusterState, clusterNames []string) http
 		mcp.WithString("name", mcp.Description("Resource name filter (optional)")),
 		mcp.WithString("changeType", mcp.Description("Change type: added, modified, or deleted (optional)")),
 		mcp.WithNumber("limit", mcp.Description("Maximum results (default 50)")),
+		mcp.WithNumber("offset", mcp.Description("Pagination offset (default 0)")),
 	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		cluster, _ := args["cluster"].(string)
@@ -475,10 +497,14 @@ func buildMCPServer(states map[string]*ClusterState, clusterNames []string) http
 		kind, _ := args["kind"].(string)
 		ns, _ := args["namespace"].(string)
 		name, _ := args["name"].(string)
-		ct := gitindex.ChangeType(func() string { s, _ := args["changeType"].(string); return s }())
+		changeType, _ := args["changeType"].(string)
 		limit := 50
 		if lv, ok := args["limit"].(float64); ok && lv > 0 {
 			limit = int(lv)
+		}
+		offset := 0
+		if ov, ok := args["offset"].(float64); ok && ov >= 0 {
+			offset = int(ov)
 		}
 		var since, until *time.Time
 		if sv, ok := args["since"].(string); ok && sv != "" {
@@ -491,26 +517,11 @@ func buildMCPServer(states map[string]*ClusterState, clusterNames []string) http
 				until = &t
 			}
 		}
-
-		var allEvents []gitindex.ChangeEvent
-		for _, clusterName := range clusterNames {
-			if cluster != "" && clusterName != cluster {
-				continue
-			}
-			st := states[clusterName]
-			st.mu.RLock()
-			ci := st.changeIdx
-			st.mu.RUnlock()
-			if ci == nil {
-				continue
-			}
-			events, _ := ci.Query(since, until, clusterName, group, kind, ns, name, ct, 1<<30, 0)
-			allEvents = append(allEvents, events...)
+		events, _, err := q.GetHistory(cluster, group, kind, ns, name, changeType, since, until, limit, offset)
+		if err != nil {
+			return mcp.NewToolResultText(err.Error()), nil
 		}
-		if len(allEvents) > limit {
-			allEvents = allEvents[:limit]
-		}
-		return mcp.NewToolResultText(mustJSON(allEvents)), nil
+		return mcp.NewToolResultText(mustJSON(events)), nil
 	})
 
 	s.AddTool(mcp.NewTool("get_diff",
@@ -531,27 +542,17 @@ func buildMCPServer(states map[string]*ClusterState, clusterNames []string) http
 		name, _ := args["name"].(string)
 		fromSHA, _ := args["from"].(string)
 		toSHA, _ := args["to"].(string)
-		st, ok := states[cluster]
-		if !ok {
-			return mcp.NewToolResultText("cluster not found"), nil
-		}
-		meta, ok := st.idx.Get(group, kind, ns, name)
-		if !ok {
-			return mcp.NewToolResultText("not found"), nil
-		}
-		relPath := st.relPath(meta.FilePath)
-		if relPath == "" {
-			return mcp.NewToolResultText("cannot determine git path"), nil
-		}
-		before, err := st.fileAt(relPath, fromSHA)
+		result, err := q.GetDiff(cluster, group, kind, ns, name, fromSHA, toSHA)
 		if err != nil {
-			return mcp.NewToolResultText("from: " + err.Error()), nil
+			if errors.Is(err, query.ErrClusterNotFound) {
+				return mcp.NewToolResultText("cluster not found"), nil
+			}
+			if errors.Is(err, query.ErrNotFound) {
+				return mcp.NewToolResultText("not found"), nil
+			}
+			return mcp.NewToolResultText(err.Error()), nil
 		}
-		after, err := st.fileAt(relPath, toSHA)
-		if err != nil {
-			return mcp.NewToolResultText("to: " + err.Error()), nil
-		}
-		return mcp.NewToolResultText(mustJSON(map[string]string{"before": before, "after": after})), nil
+		return mcp.NewToolResultText(mustJSON(map[string]string{"before": result.Before, "after": result.After})), nil
 	})
 
 	s.AddTool(mcp.NewTool("get_volatility",
@@ -564,6 +565,7 @@ func buildMCPServer(states map[string]*ClusterState, clusterNames []string) http
 		mcp.WithNumber("commits", mcp.Description("Number of recent commits to analyze (default 50)")),
 		mcp.WithNumber("threshold", mcp.Description("Minimum change ratio to include 0.0–1.0 (default 0.0)")),
 		mcp.WithNumber("limit", mcp.Description("Maximum results (default 50)")),
+		mcp.WithNumber("offset", mcp.Description("Pagination offset (default 0)")),
 	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		cluster, _ := args["cluster"].(string)
@@ -583,51 +585,13 @@ func buildMCPServer(states map[string]*ClusterState, clusterNames []string) http
 		if lv, ok := args["limit"].(float64); ok && lv > 0 {
 			limit = int(lv)
 		}
-
-		type entry struct {
-			Cluster   string  `json:"cluster"`
-			Group     string  `json:"group"`
-			Kind      string  `json:"kind"`
-			Namespace string  `json:"namespace"`
-			Name      string  `json:"name"`
-			Count     int     `json:"count"`
-			Total     int     `json:"total"`
-			Ratio     float64 `json:"ratio"`
+		offset := 0
+		if ov, ok := args["offset"].(float64); ok && ov >= 0 {
+			offset = int(ov)
 		}
-		var result []entry
-		for _, clusterName := range clusterNames {
-			if cluster != "" && clusterName != cluster {
-				continue
-			}
-			st := states[clusterName]
-			st.mu.RLock()
-			ci := st.changeIdx
-			st.mu.RUnlock()
-			if ci == nil {
-				continue
-			}
-			for _, e := range ci.Volatility(clusterName, group, kind, ns, name, commits) {
-				ratio := 0.0
-				if e.Total > 0 {
-					ratio = float64(e.Count) / float64(e.Total)
-				}
-				if ratio < threshold {
-					continue
-				}
-				result = append(result, entry{
-					Cluster:   e.Cluster,
-					Group:     e.Group,
-					Kind:      e.Kind,
-					Namespace: e.Namespace,
-					Name:      e.Name,
-					Count:     e.Count,
-					Total:     e.Total,
-					Ratio:     ratio,
-				})
-			}
-		}
-		if len(result) > limit {
-			result = result[:limit]
+		result, _, err := q.GetVolatility(cluster, group, kind, ns, name, commits, threshold, limit, offset)
+		if err != nil {
+			return mcp.NewToolResultText(err.Error()), nil
 		}
 		return mcp.NewToolResultText(mustJSON(result)), nil
 	})
@@ -640,6 +604,7 @@ func buildMCPServer(states map[string]*ClusterState, clusterNames []string) http
 		mcp.WithString("namespace", mcp.Description("Namespace filter (optional)")),
 		mcp.WithString("name", mcp.Description("Resource name filter (optional)")),
 		mcp.WithNumber("commits", mcp.Description("Number of recent commits to analyze (default 50)")),
+		mcp.WithNumber("limit", mcp.Description("Maximum results (default 0 = all)")),
 	), func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		cluster, _ := args["cluster"].(string)
@@ -651,32 +616,15 @@ func buildMCPServer(states map[string]*ClusterState, clusterNames []string) http
 		if cv, ok := args["commits"].(float64); ok && cv > 0 {
 			commits = int(cv)
 		}
-
-		var allEntries []gitindex.FieldVolatilityEntry
-		for _, clusterName := range clusterNames {
-			if cluster != "" && clusterName != cluster {
-				continue
-			}
-			st := states[clusterName]
-			st.mu.RLock()
-			ci := st.changeIdx
-			gc := st.gc
-			subDir := st.subDir
-			st.mu.RUnlock()
-			if ci == nil || gc == nil {
-				continue
-			}
-			events, _ := ci.Query(nil, nil, clusterName, group, kind, ns, name, "", 1<<30, 0)
-			if len(events) == 0 {
-				continue
-			}
-			entries, err := gitindex.FieldVolatilityFromRepo(gc.Repo(), events, subDir, commits)
-			if err != nil {
-				continue
-			}
-			allEntries = append(allEntries, entries...)
+		limit := 0
+		if lv, ok := args["limit"].(float64); ok && lv > 0 {
+			limit = int(lv)
 		}
-		return mcp.NewToolResultText(mustJSON(allEntries)), nil
+		result, err := q.GetVolatilityFields(cluster, group, kind, ns, name, commits, limit)
+		if err != nil {
+			return mcp.NewToolResultText(err.Error()), nil
+		}
+		return mcp.NewToolResultText(mustJSON(result)), nil
 	})
 
 	return mcpserver.NewStreamableHTTPServer(s)
@@ -718,11 +666,4 @@ func authConfigHandler(cfg *config.ServerConfig) http.HandlerFunc {
 func mustJSON(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
