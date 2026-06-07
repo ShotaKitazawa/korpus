@@ -145,7 +145,18 @@ Claude Desktop (`claude_desktop_config.json`):
 }
 ```
 
-When OIDC is enabled, pass the bearer token via a header:
+When OIDC is enabled, Claude Code handles authentication automatically via
+OAuth 2.0 with Dynamic Client Registration (DCR). The server's
+`/.well-known/oauth-protected-resource` endpoint advertises the issuer,
+so no extra flags are needed:
+
+```bash
+claude mcp add --transport http korpus http://localhost:8080/mcp
+```
+
+If your OIDC provider does not support DCR, pass a pre-obtained bearer token
+instead:
+
 ```bash
 claude mcp add --transport http korpus http://localhost:8080/mcp \
   --header "Authorization: Bearer <token>"
