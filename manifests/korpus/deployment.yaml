@@ -25,6 +25,12 @@ spec:
           args: ["--config", "/mnt/config/korpus.yaml"]
           ports:
             - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /healthz

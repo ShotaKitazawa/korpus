@@ -12,7 +12,7 @@ data:
         branch: main
         subDir: cluster
         token: ${GIT_TOKEN}
-        # tokenFile: /var/run/secrets/git-token  # alternative: read token from file on each git op (enables rotation)
+        # tokenFile: /var/run/secrets/git-token/token  # alternative: read token from file on each git op (enables rotation)
         author:
           name: backup-bot
           email: backup-bot@github.com
@@ -44,7 +44,7 @@ data:
             branch: main
             subDir: cluster
             token: ${GIT_TOKEN}
-            # tokenFile: /var/run/secrets/git-token  # alternative: read token from file on each git op (enables rotation)
+            # tokenFile: /var/run/secrets/git-token/token  # alternative: read token from file on each git op (enables rotation)
             author:
               name: korpus-bot
               email: korpus-bot@github.com
