@@ -53,3 +53,4 @@ data:
           # removing metadata.labels causes disk I/O on label queries
           - metadata.labels
           - metadata.creationTimestamp
+        # historyDays: 30  # how many days of git history to index for /api/history and /api/volatility
