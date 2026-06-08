@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -282,7 +283,8 @@ func main() {
 
 	var oidcMiddleware *oidcmw.Middleware
 	if cfg.Spec.OIDC != nil {
-		oidcMiddleware, err = oidcmw.New(ctx, cfg.Spec.OIDC.Issuer, cfg.Spec.OIDC.Audience)
+		rmURL := protectedResourceMetadataURL(cfg.Spec.OIDC.Audience)
+		oidcMiddleware, err = oidcmw.New(ctx, cfg.Spec.OIDC.Issuer, cfg.Spec.OIDC.Audience, rmURL)
 		if err != nil {
 			logger.Error("initialize oidc middleware", "err", err)
 			os.Exit(1)
@@ -333,7 +335,11 @@ func buildMux(ctx context.Context, cfg *config.ServerConfig, states map[string]*
 
 	// Always-public routes.
 	mux.Handle("/healthz", ogenSrv)
-	mux.HandleFunc("/.well-known/oauth-protected-resource", oauthProtectedResourceHandler(cfg))
+	wkPath := "/.well-known/oauth-protected-resource"
+	if cfg.Spec.OIDC != nil {
+		wkPath = protectedResourceWellKnownPath(cfg.Spec.OIDC.Audience)
+	}
+	mux.HandleFunc(wkPath, oauthProtectedResourceHandler(cfg))
 	mux.HandleFunc("/auth-config", authConfigHandler(cfg))
 
 	// Protected routes (JWT middleware when OIDC is configured).
@@ -628,6 +634,28 @@ func buildMCPServer(q *query.Server) http.Handler {
 	})
 
 	return mcpserver.NewStreamableHTTPServer(s)
+}
+
+// protectedResourceWellKnownPath returns the /.well-known/oauth-protected-resource path
+// for the given audience URI, per RFC 9728 §3 well-known URI construction.
+func protectedResourceWellKnownPath(audience string) string {
+	u, err := url.Parse(audience)
+	if err != nil || u.Host == "" {
+		return "/.well-known/oauth-protected-resource"
+	}
+	p := strings.TrimSuffix(u.Path, "/")
+	return "/.well-known/oauth-protected-resource" + p
+}
+
+// protectedResourceMetadataURL returns the full URL of the well-known document,
+// used in WWW-Authenticate challenges per RFC 9728 §5.1.
+func protectedResourceMetadataURL(audience string) string {
+	u, err := url.Parse(audience)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	p := strings.TrimSuffix(u.Path, "/")
+	return u.Scheme + "://" + u.Host + "/.well-known/oauth-protected-resource" + p
 }
 
 // oauthProtectedResourceHandler serves RFC9728 metadata when OIDC is configured.
