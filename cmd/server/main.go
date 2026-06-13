@@ -11,7 +11,6 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 
-	"github.com/felixge/fgprof"
 	"net/url"
 	"os"
 	"os/signal"
@@ -20,6 +19,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/felixge/fgprof"
 
 	"embed"
 
