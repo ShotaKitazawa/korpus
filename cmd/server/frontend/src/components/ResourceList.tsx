@@ -1,23 +1,23 @@
-import type { SnapshotResource } from "../App.tsx"
+import type { SnapshotResource } from "../App.tsx";
 
 interface Props {
-  resources: SnapshotResource[]
-  total: number
-  offset: number
-  limit: number
-  selected: SnapshotResource | null
-  onSelect: (r: SnapshotResource) => void
-  onOffsetChange: (offset: number) => void
+  resources: SnapshotResource[];
+  total: number;
+  offset: number;
+  limit: number;
+  selected: SnapshotResource | null;
+  onSelect: (r: SnapshotResource) => void;
+  onOffsetChange: (offset: number) => void;
 }
 
 function formatAge(ts: string): string {
-  const diffMs = Date.now() - new Date(ts).getTime()
-  const days = Math.floor(diffMs / 86400000)
-  if (days >= 1) return `${days}d`
-  const hours = Math.floor(diffMs / 3600000)
-  if (hours >= 1) return `${hours}h`
-  const minutes = Math.floor(diffMs / 60000)
-  return `${minutes}m`
+  const diffMs = Date.now() - new Date(ts).getTime();
+  const days = Math.floor(diffMs / 86400000);
+  if (days >= 1) return `${days}d`;
+  const hours = Math.floor(diffMs / 3600000);
+  if (hours >= 1) return `${hours}h`;
+  const minutes = Math.floor(diffMs / 60000);
+  return `${minutes}m`;
 }
 
 export default function ResourceList({
@@ -29,22 +29,20 @@ export default function ResourceList({
   onSelect,
   onOffsetChange,
 }: Props) {
-  const hasPrev = offset > 0
-  const hasNext = offset + limit < total
+  const hasPrev = offset > 0;
+  const hasNext = offset + limit < total;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div style={{ flex: 1, overflowY: "auto" }}>
-        {resources.length === 0 && (
-          <div style={{ padding: 8, color: "#888" }}>no resources</div>
-        )}
+        {resources.length === 0 && <div style={{ padding: 8, color: "#888" }}>no resources</div>}
         {resources.map((r) => {
-          const key = `${r.cluster}/${r.kind}/${r.namespace}/${r.name}`
+          const key = `${r.cluster}/${r.kind}/${r.namespace}/${r.name}`;
           const isSelected =
             selected?.cluster === r.cluster &&
             selected?.kind === r.kind &&
             selected?.name === r.name &&
-            selected?.namespace === r.namespace
+            selected?.namespace === r.namespace;
           return (
             <div
               key={key}
@@ -71,11 +69,9 @@ export default function ResourceList({
                 )}
               </div>
               <div>{r.name}</div>
-              {r.namespace && (
-                <div style={{ fontSize: 11, color: "#888" }}>{r.namespace}</div>
-              )}
+              {r.namespace && <div style={{ fontSize: 11, color: "#888" }}>{r.namespace}</div>}
             </div>
-          )
+          );
         })}
       </div>
 
@@ -128,5 +124,5 @@ export default function ResourceList({
         </div>
       )}
     </div>
-  )
+  );
 }

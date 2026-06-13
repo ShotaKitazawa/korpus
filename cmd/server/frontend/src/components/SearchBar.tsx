@@ -1,6 +1,6 @@
 interface Props {
-  query: string
-  onChange: (q: string) => void
+  query: string;
+  onChange: (q: string) => void;
 }
 
 export default function SearchBar({ query, onChange }: Props) {
@@ -12,5 +12,5 @@ export default function SearchBar({ query, onChange }: Props) {
       onChange={(e) => onChange(e.target.value)}
       style={{ flex: 1 }}
     />
-  )
+  );
 }

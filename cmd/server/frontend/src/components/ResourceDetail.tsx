@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react"
-import { api, type DiffResult, type ChangeEvent } from "../api.ts"
-import type { SnapshotResource } from "../App.tsx"
+import { useEffect, useState } from "react";
+import { api, type DiffResult, type ChangeEvent } from "../api.ts";
+import type { SnapshotResource } from "../App.tsx";
 
 const colors = {
   key: "#2563eb",
@@ -9,24 +9,24 @@ const colors = {
   bool: "#7c3aed",
   comment: "#9ca3af",
   separator: "#6b7280",
-}
+};
 
 function YamlLineContent({ line }: { line: string }) {
   if (/^---\s*$/.test(line)) {
-    return <span style={{ color: colors.separator }}>{line}</span>
+    return <span style={{ color: colors.separator }}>{line}</span>;
   }
-  const commentMatch = line.match(/^(\s*)(#.*)$/)
+  const commentMatch = line.match(/^(\s*)(#.*)$/);
   if (commentMatch) {
     return (
       <>
         {commentMatch[1]}
         <span style={{ color: colors.comment }}>{commentMatch[2]}</span>
       </>
-    )
+    );
   }
-  const kvMatch = line.match(/^(\s*-?\s*)([^:]+)(:)(\s+)(.*)?$/)
+  const kvMatch = line.match(/^(\s*-?\s*)([^:]+)(:)(\s+)(.*)?$/);
   if (kvMatch) {
-    const [, indent, key, colon, space, val = ""] = kvMatch
+    const [, indent, key, colon, space, val = ""] = kvMatch;
     return (
       <>
         {indent}
@@ -35,18 +35,18 @@ function YamlLineContent({ line }: { line: string }) {
         {space}
         <YamlValue value={val} />
       </>
-    )
+    );
   }
-  const listMatch = line.match(/^(\s*-\s+)(.*)$/)
+  const listMatch = line.match(/^(\s*-\s+)(.*)$/);
   if (listMatch) {
     return (
       <>
         <span style={{ color: colors.separator }}>{listMatch[1]}</span>
         <YamlValue value={listMatch[2]} />
       </>
-    )
+    );
   }
-  return <>{line}</>
+  return <>{line}</>;
 }
 
 function YamlLine({ line }: { line: string }) {
@@ -55,21 +55,16 @@ function YamlLine({ line }: { line: string }) {
       <YamlLineContent line={line} />
       {"\n"}
     </span>
-  )
+  );
 }
 
 function YamlValue({ value }: { value: string }) {
-  if (value === "") return null
-  if (
-    value === "true" ||
-    value === "false" ||
-    value === "null" ||
-    value === "~"
-  ) {
-    return <span style={{ color: colors.bool }}>{value}</span>
+  if (value === "") return null;
+  if (value === "true" || value === "false" || value === "null" || value === "~") {
+    return <span style={{ color: colors.bool }}>{value}</span>;
   }
   if (/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(value)) {
-    return <span style={{ color: colors.number }}>{value}</span>
+    return <span style={{ color: colors.number }}>{value}</span>;
   }
   if (
     value.startsWith('"') ||
@@ -77,13 +72,13 @@ function YamlValue({ value }: { value: string }) {
     value.startsWith("|") ||
     value.startsWith(">")
   ) {
-    return <span style={{ color: colors.string }}>{value}</span>
+    return <span style={{ color: colors.string }}>{value}</span>;
   }
-  return <span>{value}</span>
+  return <span>{value}</span>;
 }
 
 function YamlHighlight({ text }: { text: string }) {
-  const lines = text.split("\n")
+  const lines = text.split("\n");
   return (
     <pre
       style={{
@@ -99,57 +94,60 @@ function YamlHighlight({ text }: { text: string }) {
         <YamlLine key={i} line={line} />
       ))}
     </pre>
-  )
+  );
 }
 
-type DiffLine = {
-  type: "equal" | "remove" | "add"
-  line: string
-} | { type: "empty" }
+type DiffLine =
+  | {
+      type: "equal" | "remove" | "add";
+      line: string;
+    }
+  | { type: "empty" };
 
-function computeLineDiff(before: string, after: string): {
-  left: DiffLine[]
-  right: DiffLine[]
+function computeLineDiff(
+  before: string,
+  after: string,
+): {
+  left: DiffLine[];
+  right: DiffLine[];
 } {
-  const a = before.split("\n")
-  const b = after.split("\n")
-  const m = a.length
-  const n = b.length
+  const a = before.split("\n");
+  const b = after.split("\n");
+  const m = a.length;
+  const n = b.length;
 
   const dp: number[][] = Array.from({ length: m + 1 }, () =>
     Array.from<number>({ length: n + 1 }).fill(0),
-  )
+  );
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
       dp[i][j] =
-        a[i - 1] === b[j - 1]
-          ? dp[i - 1][j - 1] + 1
-          : Math.max(dp[i - 1][j], dp[i][j - 1])
+        a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
     }
   }
 
-  const left: DiffLine[] = []
-  const right: DiffLine[] = []
-  let i = m
-  let j = n
+  const left: DiffLine[] = [];
+  const right: DiffLine[] = [];
+  let i = m;
+  let j = n;
   while (i > 0 || j > 0) {
     if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
-      left.unshift({ type: "equal", line: a[i - 1] })
-      right.unshift({ type: "equal", line: b[j - 1] })
-      i--
-      j--
+      left.unshift({ type: "equal", line: a[i - 1] });
+      right.unshift({ type: "equal", line: b[j - 1] });
+      i--;
+      j--;
     } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-      left.unshift({ type: "empty" })
-      right.unshift({ type: "add", line: b[j - 1] })
-      j--
+      left.unshift({ type: "empty" });
+      right.unshift({ type: "add", line: b[j - 1] });
+      j--;
     } else {
-      left.unshift({ type: "remove", line: a[i - 1] })
-      right.unshift({ type: "empty" })
-      i--
+      left.unshift({ type: "remove", line: a[i - 1] });
+      right.unshift({ type: "empty" });
+      i--;
     }
   }
 
-  return { left, right }
+  return { left, right };
 }
 
 function DiffLineView({ line }: { line: DiffLine }) {
@@ -160,7 +158,7 @@ function DiffLineView({ line }: { line: DiffLine }) {
         ? "#eaffea"
         : line.type === "empty"
           ? "#f5f5f5"
-          : undefined
+          : undefined;
   return (
     <div
       style={{
@@ -176,11 +174,11 @@ function DiffLineView({ line }: { line: DiffLine }) {
     >
       {line.type !== "empty" && <YamlLineContent line={line.line} />}
     </div>
-  )
+  );
 }
 
 function SideBySideDiff({ diff }: { diff: DiffResult }) {
-  const { left, right } = computeLineDiff(diff.before, diff.after)
+  const { left, right } = computeLineDiff(diff.before, diff.after);
   return (
     <>
       <div style={{ flex: 1, overflow: "auto", borderRight: "1px solid #ccc" }}>
@@ -194,44 +192,45 @@ function SideBySideDiff({ diff }: { diff: DiffResult }) {
         ))}
       </div>
     </>
-  )
+  );
 }
 
-function getFromTo(shas: string[], history: ChangeEvent[]): {
-  from: string
-  to: string
+function getFromTo(
+  shas: string[],
+  history: ChangeEvent[],
+): {
+  from: string;
+  to: string;
 } | null {
-  if (shas.length !== 2) return null
-  const idx0 = history.findIndex((e) => e.sha === shas[0])
-  const idx1 = history.findIndex((e) => e.sha === shas[1])
-  if (idx0 === -1 || idx1 === -1) return null
+  if (shas.length !== 2) return null;
+  const idx0 = history.findIndex((e) => e.sha === shas[0]);
+  const idx1 = history.findIndex((e) => e.sha === shas[1]);
+  if (idx0 === -1 || idx1 === -1) return null;
   // history is newest-first, so higher idx = older commit = "from"
-  return idx0 > idx1
-    ? { from: shas[0], to: shas[1] }
-    : { from: shas[1], to: shas[0] }
+  return idx0 > idx1 ? { from: shas[0], to: shas[1] } : { from: shas[1], to: shas[0] };
 }
 
 interface Props {
-  resource: SnapshotResource | null
-  yaml: string
+  resource: SnapshotResource | null;
+  yaml: string;
 }
 
 export default function ResourceDetail({ resource, yaml }: Props) {
-  const [tab, setTab] = useState<"yaml" | "history">("yaml")
-  const [history, setHistory] = useState<ChangeEvent[]>([])
-  const [selectedSHAs, setSelectedSHAs] = useState<string[]>([])
-  const [diff, setDiff] = useState<DiffResult | null>(null)
+  const [tab, setTab] = useState<"yaml" | "history">("yaml");
+  const [history, setHistory] = useState<ChangeEvent[]>([]);
+  const [selectedSHAs, setSelectedSHAs] = useState<string[]>([]);
+  const [diff, setDiff] = useState<DiffResult | null>(null);
 
   useEffect(() => {
-    setTab("yaml")
-    setHistory([])
-    setDiff(null)
-    setSelectedSHAs([])
-  }, [resource])
+    setTab("yaml");
+    setHistory([]);
+    setDiff(null);
+    setSelectedSHAs([]);
+  }, [resource]);
 
   useEffect(() => {
-    if (tab !== "history" || !resource) return
-    const { cluster, group, kind, namespace, name } = resource
+    if (tab !== "history" || !resource) return;
+    const { cluster, group, kind, namespace, name } = resource;
     api
       .GET("/api/history", {
         params: {
@@ -244,17 +243,17 @@ export default function ResourceDetail({ resource, yaml }: Props) {
           },
         },
       })
-      .then(({ data }) => setHistory(data?.items ?? []))
-  }, [tab, resource])
+      .then(({ data }) => setHistory(data?.items ?? []));
+  }, [tab, resource]);
 
   useEffect(() => {
-    const fromTo = getFromTo(selectedSHAs, history)
+    const fromTo = getFromTo(selectedSHAs, history);
     if (!fromTo || !resource) {
-      setDiff(null)
-      return
+      setDiff(null);
+      return;
     }
-    const { from, to } = fromTo
-    const { cluster, group, kind, namespace, name } = resource
+    const { from, to } = fromTo;
+    const { cluster, group, kind, namespace, name } = resource;
     api
       .GET("/api/diff", {
         params: {
@@ -270,23 +269,23 @@ export default function ResourceDetail({ resource, yaml }: Props) {
         },
       })
       .then(({ data }) => {
-        if (data) setDiff(data)
-      })
-  }, [selectedSHAs, resource, history])
+        if (data) setDiff(data);
+      });
+  }, [selectedSHAs, resource, history]);
 
   const handleCommitClick = (sha: string) => {
     setSelectedSHAs((prev) => {
-      if (prev.includes(sha)) return prev.filter((s) => s !== sha)
-      if (prev.length < 2) return [...prev, sha]
-      return [prev[1], sha]
-    })
-  }
+      if (prev.includes(sha)) return prev.filter((s) => s !== sha);
+      if (prev.length < 2) return [...prev, sha];
+      return [prev[1], sha];
+    });
+  };
 
   if (!resource) {
-    return <div style={{ color: "#888" }}>select a resource</div>
+    return <div style={{ color: "#888" }}>select a resource</div>;
   }
 
-  const fromTo = getFromTo(selectedSHAs, history)
+  const fromTo = getFromTo(selectedSHAs, history);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -306,8 +305,7 @@ export default function ResourceDetail({ resource, yaml }: Props) {
             cursor: "pointer",
             fontFamily: "monospace",
             fontWeight: tab === "yaml" ? "bold" : undefined,
-            borderBottom:
-              tab === "yaml" ? "2px solid #333" : "2px solid transparent",
+            borderBottom: tab === "yaml" ? "2px solid #333" : "2px solid transparent",
             padding: "2px 8px",
           }}
         >
@@ -321,8 +319,7 @@ export default function ResourceDetail({ resource, yaml }: Props) {
             cursor: "pointer",
             fontFamily: "monospace",
             fontWeight: tab === "history" ? "bold" : undefined,
-            borderBottom:
-              tab === "history" ? "2px solid #333" : "2px solid transparent",
+            borderBottom: tab === "history" ? "2px solid #333" : "2px solid transparent",
             padding: "2px 8px",
           }}
         >
@@ -342,20 +339,12 @@ export default function ResourceDetail({ resource, yaml }: Props) {
               fontSize: 11,
             }}
           >
-            {history.length === 0 && (
-              <div style={{ padding: 8, color: "#888" }}>no history</div>
-            )}
+            {history.length === 0 && <div style={{ padding: 8, color: "#888" }}>no history</div>}
             {history.map((entry) => {
-              const isFrom = fromTo?.from === entry.sha
-              const isTo = fromTo?.to === entry.sha
-              const isSelected = selectedSHAs.includes(entry.sha)
-              const bg = isFrom
-                ? "#fff3cd"
-                : isTo
-                  ? "#d4edda"
-                  : isSelected
-                    ? "#e8e8ff"
-                    : undefined
+              const isFrom = fromTo?.from === entry.sha;
+              const isTo = fromTo?.to === entry.sha;
+              const isSelected = selectedSHAs.includes(entry.sha);
+              const bg = isFrom ? "#fff3cd" : isTo ? "#d4edda" : isSelected ? "#e8e8ff" : undefined;
               return (
                 <div
                   key={entry.sha}
@@ -415,11 +404,9 @@ export default function ResourceDetail({ resource, yaml }: Props) {
                   >
                     {entry.changeType}
                   </div>
-                  <div style={{ color: "#999" }}>
-                    {new Date(entry.timestamp).toLocaleString()}
-                  </div>
+                  <div style={{ color: "#999" }}>{new Date(entry.timestamp).toLocaleString()}</div>
                 </div>
-              )
+              );
             })}
           </div>
 
@@ -468,13 +455,11 @@ export default function ResourceDetail({ resource, yaml }: Props) {
                 </div>
               </>
             ) : (
-              <div style={{ padding: 8, color: "#888", fontSize: 11 }}>
-                loading...
-              </div>
+              <div style={{ padding: 8, color: "#888", fontSize: 11 }}>loading...</div>
             )}
           </div>
         </div>
       )}
     </div>
-  )
+  );
 }
