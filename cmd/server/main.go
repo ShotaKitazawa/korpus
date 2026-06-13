@@ -111,6 +111,7 @@ func (s *ClusterState) rebuildIndexes(dir, clusterName string, historyDays int) 
 	logger := slog.Default()
 
 	t0 := time.Now()
+	logger.Info("index.Build starting", "cluster", clusterName)
 	if err := s.idx.Build(dir); err != nil {
 		return err
 	}
@@ -127,18 +128,20 @@ func (s *ClusterState) rebuildIndexes(dir, clusterName string, historyDays int) 
 	repo := gc.Repo()
 
 	t1 := time.Now()
+	logger.Info("BuildCommitIndex starting", "cluster", clusterName)
 	commitIdx, err := gitindex.BuildCommitIndex(workDir)
 	if err != nil {
 		return fmt.Errorf("build commit index: %w", err)
 	}
-	logger.Info("BuildCommitIndex done", "cluster", clusterName, "elapsed", time.Since(t1).Round(time.Millisecond))
+	logger.Info("BuildCommitIndex done", "cluster", clusterName, "commits", commitIdx.Len(), "elapsed", time.Since(t1).Round(time.Millisecond))
 
 	t2 := time.Now()
+	logger.Info("BuildChangeIndex starting", "cluster", clusterName, "historyDays", historyDays)
 	changeIdx, err := gitindex.BuildChangeIndex(repo, workDir, clusterName, subDir, historyDays)
 	if err != nil {
 		return fmt.Errorf("build change index: %w", err)
 	}
-	logger.Info("BuildChangeIndex done", "cluster", clusterName, "elapsed", time.Since(t2).Round(time.Millisecond))
+	logger.Info("BuildChangeIndex done", "cluster", clusterName, "events", changeIdx.Len(), "elapsed", time.Since(t2).Round(time.Millisecond))
 
 	s.mu.Lock()
 	s.commitIdx = commitIdx
@@ -254,6 +257,7 @@ func main() {
 		c := clusterCfg
 		state := states[c.Name]
 		go func() {
+			tStart := time.Now()
 			workDir, err := os.MkdirTemp("", "korpus-server-"+c.Name+"-*")
 			if err != nil {
 				logger.Error("create work dir", "cluster", c.Name, "err", err)
@@ -262,6 +266,7 @@ func main() {
 			defer os.RemoveAll(workDir)
 
 			t0 := time.Now()
+			logger.Info("git clone starting", "cluster", c.Name, "repo", c.Git.Repo, "branch", c.Git.Branch)
 			gc, err := gitclient.Clone(ctx, c.Git.Repo, c.Git.Branch, c.Git.Token, c.Git.TokenFile, workDir, 0)
 			if err != nil {
 				logger.Error("git clone", "cluster", c.Name, "err", err)
@@ -275,6 +280,7 @@ func main() {
 				logger.Warn("index build", "cluster", c.Name, "err", buildErr)
 				state.recordPull(buildErr)
 			} else {
+				logger.Info("initialization done", "cluster", c.Name, "totalElapsed", time.Since(tStart).Round(time.Millisecond))
 				state.recordPull(nil)
 			}
 
@@ -286,6 +292,8 @@ func main() {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
+					tPull := time.Now()
+					logger.Info("git pull starting", "cluster", c.Name)
 					pullErr := gc.Pull()
 					if pullErr != nil {
 						logger.Warn("pull failed, re-cloning", "cluster", c.Name, "err", pullErr)
@@ -296,13 +304,18 @@ func main() {
 							state.recordPull(err)
 							continue
 						}
+						t0 = time.Now()
+						logger.Info("git clone starting", "cluster", c.Name, "repo", c.Git.Repo, "branch", c.Git.Branch)
 						gc, err = gitclient.Clone(ctx, c.Git.Repo, c.Git.Branch, c.Git.Token, c.Git.TokenFile, workDir, 0)
 						if err != nil {
 							logger.Error("re-clone failed", "cluster", c.Name, "err", err)
 							state.recordPull(err)
 							continue
 						}
+						logger.Info("git clone done", "cluster", c.Name, "elapsed", time.Since(t0).Round(time.Millisecond))
 						state.setGit(gc, workDir)
+					} else {
+						logger.Info("git pull done", "cluster", c.Name, "elapsed", time.Since(tPull).Round(time.Millisecond))
 					}
 					indexDir = filepath.Join(workDir, c.Git.SubDir)
 					if buildErr := state.rebuildIndexes(indexDir, c.Name, cfg.Spec.Index.HistoryDays); buildErr != nil {

@@ -249,6 +249,9 @@ func kindFromYAML(content []byte) string {
 	return ""
 }
 
+// Len returns the number of change events in the index.
+func (ci *ChangeIndex) Len() int { return len(ci.events) }
+
 // Query returns a filtered, paginated slice of ChangeEvents (newest first) with total count.
 // All filter parameters are optional (empty string / nil pointer = no filter).
 func (ci *ChangeIndex) Query(

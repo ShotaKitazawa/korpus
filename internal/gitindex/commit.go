@@ -82,6 +82,9 @@ func (ci *CommitIndex) FindBefore(t time.Time) (CommitRef, bool) {
 	return refs[result], true
 }
 
+// Len returns the number of commits in the index.
+func (ci *CommitIndex) Len() int { return len(ci.refs) }
+
 // All returns a copy of all CommitRefs in ascending time order.
 func (ci *CommitIndex) All() []CommitRef {
 	out := make([]CommitRef, len(ci.refs))
