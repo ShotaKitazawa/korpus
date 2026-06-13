@@ -63,6 +63,7 @@ run = "go vet ./..."
 run = "go test ./..."
 
 [tasks.ci-build-backend]
+depends = ["ci-build-frontend"]
 run = "go build ./..."
 
 [tasks.ci-install-frontend]
