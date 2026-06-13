@@ -1,84 +1,76 @@
-import { useEffect, useRef, useState } from "react"
-import { api, type SnapshotResource, type GVKInfo } from "./api.ts"
-import VolatilityView from "./components/VolatilityView.tsx"
-import ClusterList from "./components/ClusterList.tsx"
-import KindSelect from "./components/KindSelect.tsx"
-import NamespaceList from "./components/NamespaceList.tsx"
-import ResourceDetail from "./components/ResourceDetail.tsx"
-import ResourceList from "./components/ResourceList.tsx"
-import SearchBar from "./components/SearchBar.tsx"
+import { useEffect, useRef, useState } from "react";
+import { api, type SnapshotResource, type GVKInfo } from "./api.ts";
+import VolatilityView from "./components/VolatilityView.tsx";
+import ClusterList from "./components/ClusterList.tsx";
+import KindSelect from "./components/KindSelect.tsx";
+import NamespaceList from "./components/NamespaceList.tsx";
+import ResourceDetail from "./components/ResourceDetail.tsx";
+import ResourceList from "./components/ResourceList.tsx";
+import SearchBar from "./components/SearchBar.tsx";
 
-export type { SnapshotResource }
+export type { SnapshotResource };
 
-const DEFAULT_LIMIT = 50
+const DEFAULT_LIMIT = 50;
 
 function readParam(key: string): string {
-  return new URLSearchParams(window.location.search).get(key) ?? ""
+  return new URLSearchParams(window.location.search).get(key) ?? "";
 }
 
 function readIntParam(key: string, fallback: number): number {
-  const v = new URLSearchParams(window.location.search).get(key)
-  const n = v ? parseInt(v, 10) : NaN
-  return isNaN(n) ? fallback : n
+  const v = new URLSearchParams(window.location.search).get(key);
+  const n = v ? parseInt(v, 10) : NaN;
+  return isNaN(n) ? fallback : n;
 }
 
 function syncUrl(state: {
-  cluster: string
-  group: string
-  version: string
-  namespace: string
-  kind: string
-  q: string
-  offset: number
-  selected: SnapshotResource | null
-  view: string
+  cluster: string;
+  group: string;
+  version: string;
+  namespace: string;
+  kind: string;
+  q: string;
+  offset: number;
+  selected: SnapshotResource | null;
+  view: string;
 }) {
-  const params = new URLSearchParams()
-  if (state.cluster) params.set("cluster", state.cluster)
-  if (state.group) params.set("group", state.group)
-  if (state.version) params.set("version", state.version)
-  if (state.namespace) params.set("namespace", state.namespace)
-  if (state.kind) params.set("kind", state.kind)
-  if (state.q) params.set("q", state.q)
-  if (state.offset > 0) params.set("offset", String(state.offset))
-  if (state.view && state.view !== "resources") params.set("view", state.view)
+  const params = new URLSearchParams();
+  if (state.cluster) params.set("cluster", state.cluster);
+  if (state.group) params.set("group", state.group);
+  if (state.version) params.set("version", state.version);
+  if (state.namespace) params.set("namespace", state.namespace);
+  if (state.kind) params.set("kind", state.kind);
+  if (state.q) params.set("q", state.q);
+  if (state.offset > 0) params.set("offset", String(state.offset));
+  if (state.view && state.view !== "resources") params.set("view", state.view);
   if (state.selected) {
-    params.set("selCluster", state.selected.cluster)
-    params.set("selGroup", state.selected.group)
-    params.set("selKind", state.selected.kind)
-    params.set("selNamespace", state.selected.namespace)
-    params.set("selName", state.selected.name)
+    params.set("selCluster", state.selected.cluster);
+    params.set("selGroup", state.selected.group);
+    params.set("selKind", state.selected.kind);
+    params.set("selNamespace", state.selected.namespace);
+    params.set("selName", state.selected.name);
   }
-  const search = params.toString()
-    ? "?" + params.toString()
-    : window.location.pathname
-  history.replaceState(null, "", search)
+  const search = params.toString() ? "?" + params.toString() : window.location.pathname;
+  history.replaceState(null, "", search);
 }
 
 export default function App() {
-  const [clusters, setClusters] = useState<string[]>([])
-  const [selectedCluster, setSelectedCluster] = useState(() =>
-    readParam("cluster"),
-  )
-  const [selectedGroup, setSelectedGroup] = useState(() => readParam("group"))
-  const [selectedVersion, setSelectedVersion] = useState(() =>
-    readParam("version"),
-  )
-  const [namespaces, setNamespaces] = useState<string[]>([])
-  const [selectedNamespace, setSelectedNamespace] = useState(() =>
-    readParam("namespace"),
-  )
-  const [gvks, setGVKs] = useState<GVKInfo[]>([])
-  const [selectedKind, setSelectedKind] = useState(() => readParam("kind"))
-  const [resources, setResources] = useState<SnapshotResource[]>([])
-  const [total, setTotal] = useState(0)
-  const [offset, setOffset] = useState(() => readIntParam("offset", 0))
-  const [selected, setSelected] = useState<SnapshotResource | null>(null)
-  const [detail, setDetail] = useState("")
-  const [searchQuery, setSearchQuery] = useState(() => readParam("q"))
+  const [clusters, setClusters] = useState<string[]>([]);
+  const [selectedCluster, setSelectedCluster] = useState(() => readParam("cluster"));
+  const [selectedGroup, setSelectedGroup] = useState(() => readParam("group"));
+  const [selectedVersion, setSelectedVersion] = useState(() => readParam("version"));
+  const [namespaces, setNamespaces] = useState<string[]>([]);
+  const [selectedNamespace, setSelectedNamespace] = useState(() => readParam("namespace"));
+  const [gvks, setGVKs] = useState<GVKInfo[]>([]);
+  const [selectedKind, setSelectedKind] = useState(() => readParam("kind"));
+  const [resources, setResources] = useState<SnapshotResource[]>([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(() => readIntParam("offset", 0));
+  const [selected, setSelected] = useState<SnapshotResource | null>(null);
+  const [detail, setDetail] = useState("");
+  const [searchQuery, setSearchQuery] = useState(() => readParam("q"));
   const [view, setView] = useState<"resources" | "volatility">(() =>
     readParam("view") === "volatility" ? "volatility" : "resources",
-  )
+  );
 
   const pendingSelect = useRef({
     cluster: readParam("selCluster"),
@@ -86,13 +78,13 @@ export default function App() {
     kind: readParam("selKind"),
     namespace: readParam("selNamespace"),
     name: readParam("selName"),
-  })
+  });
 
   useEffect(() => {
     api.GET("/api/clusters").then(({ data }) => {
-      if (data) setClusters(data)
-    })
-  }, [])
+      if (data) setClusters(data);
+    });
+  }, []);
 
   useEffect(() => {
     api
@@ -100,9 +92,9 @@ export default function App() {
         params: { query: { cluster: selectedCluster || undefined } },
       })
       .then(({ data }) => {
-        if (data) setNamespaces(data)
-      })
-  }, [selectedCluster])
+        if (data) setNamespaces(data);
+      });
+  }, [selectedCluster]);
 
   useEffect(() => {
     api
@@ -115,12 +107,12 @@ export default function App() {
         },
       })
       .then(({ data }) => {
-        if (data) setGVKs(data)
-      })
-  }, [selectedCluster, selectedNamespace])
+        if (data) setGVKs(data);
+      });
+  }, [selectedCluster, selectedNamespace]);
 
   useEffect(() => {
-    let cancelled = false
+    let cancelled = false;
 
     const fetchPage = () => {
       if (selectedKind && searchQuery) {
@@ -141,7 +133,7 @@ export default function App() {
           .then(({ data }) => ({
             items: (data?.items ?? []) as SnapshotResource[],
             total: data?.total ?? 0,
-          }))
+          }));
       }
       return api
         .GET("/api/snapshot", {
@@ -159,14 +151,14 @@ export default function App() {
         .then(({ data }) => ({
           items: (data?.items ?? []) as SnapshotResource[],
           total: data?.total ?? 0,
-        }))
-    }
+        }));
+    };
 
     fetchPage().then(({ items, total }) => {
-      if (cancelled) return
-      setResources(items)
-      setTotal(total)
-      const p = pendingSelect.current
+      if (cancelled) return;
+      setResources(items);
+      setTotal(total);
+      const p = pendingSelect.current;
       if (p.name) {
         const match = items.find(
           (r) =>
@@ -174,36 +166,29 @@ export default function App() {
             r.kind === p.kind &&
             r.namespace === p.namespace &&
             r.cluster === p.cluster,
-        )
+        );
         if (match) {
-          setSelected(match)
+          setSelected(match);
           pendingSelect.current = {
             cluster: "",
             group: "",
             kind: "",
             namespace: "",
             name: "",
-          }
+          };
         }
       }
-    })
+    });
 
     return () => {
-      cancelled = true
-    }
-  }, [
-    selectedCluster,
-    selectedGroup,
-    selectedNamespace,
-    selectedKind,
-    searchQuery,
-    offset,
-  ])
+      cancelled = true;
+    };
+  }, [selectedCluster, selectedGroup, selectedNamespace, selectedKind, searchQuery, offset]);
 
   useEffect(() => {
     if (!selected) {
-      setDetail("")
-      return
+      setDetail("");
+      return;
     }
     api
       .GET("/api/resource", {
@@ -218,8 +203,8 @@ export default function App() {
         },
         parseAs: "text",
       })
-      .then(({ data }) => setDetail(data ?? ""))
-  }, [selected])
+      .then(({ data }) => setDetail(data ?? ""));
+  }, [selected]);
 
   useEffect(() => {
     syncUrl({
@@ -232,7 +217,7 @@ export default function App() {
       offset,
       selected,
       view,
-    })
+    });
   }, [
     selectedCluster,
     selectedGroup,
@@ -243,12 +228,12 @@ export default function App() {
     offset,
     selected,
     view,
-  ])
+  ]);
 
   const resetFilters = () => {
-    setSelected(null)
-    setOffset(0)
-  }
+    setSelected(null);
+    setOffset(0);
+  };
 
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: "monospace" }}>
@@ -264,14 +249,14 @@ export default function App() {
           clusters={clusters}
           selected={selectedCluster}
           onSelect={(c) => {
-            setSelectedCluster(c)
-            setSelectedGroup("")
-            setSelectedVersion("")
-            setSelectedNamespace("")
-            setSelectedKind("")
-            setSearchQuery("")
-            setOffset(0)
-            setSelected(null)
+            setSelectedCluster(c);
+            setSelectedGroup("");
+            setSelectedVersion("");
+            setSelectedNamespace("");
+            setSelectedKind("");
+            setSearchQuery("");
+            setOffset(0);
+            setSelected(null);
           }}
         />
         <div
@@ -289,10 +274,10 @@ export default function App() {
           namespaces={namespaces}
           selected={selectedNamespace}
           onSelect={(ns) => {
-            setSelectedNamespace(ns)
-            setSearchQuery("")
-            setOffset(0)
-            setSelected(null)
+            setSelectedNamespace(ns);
+            setSearchQuery("");
+            setOffset(0);
+            setSelected(null);
           }}
         />
       </div>
@@ -308,31 +293,25 @@ export default function App() {
         >
           <KindSelect
             gvks={gvks}
-            value={
-              selectedKind
-                ? `${selectedGroup}/${selectedVersion}/${selectedKind}`
-                : ""
-            }
+            value={selectedKind ? `${selectedGroup}/${selectedVersion}/${selectedKind}` : ""}
             onChange={(info) => {
-              setSelectedGroup(info?.group ?? "")
-              setSelectedVersion(info?.version ?? "")
-              setSelectedKind(info?.kind ?? "")
-              setOffset(0)
-              resetFilters()
+              setSelectedGroup(info?.group ?? "");
+              setSelectedVersion(info?.version ?? "");
+              setSelectedKind(info?.kind ?? "");
+              setOffset(0);
+              resetFilters();
             }}
           />
           <SearchBar
             query={searchQuery}
             onChange={(q) => {
-              setSearchQuery(q)
-              setOffset(0)
-              resetFilters()
+              setSearchQuery(q);
+              setOffset(0);
+              resetFilters();
             }}
           />
           <button
-            onClick={() =>
-              setView(view === "volatility" ? "resources" : "volatility")
-            }
+            onClick={() => setView(view === "volatility" ? "resources" : "volatility")}
             style={{
               fontFamily: "monospace",
               fontSize: 12,
@@ -352,12 +331,12 @@ export default function App() {
         {view === "volatility" ? (
           <VolatilityView
             onSelectResource={(group, kind) => {
-              setSelectedGroup(group)
-              setSelectedVersion("")
-              setSelectedKind(kind)
-              setOffset(0)
-              setSelected(null)
-              setView("resources")
+              setSelectedGroup(group);
+              setSelectedVersion("");
+              setSelectedKind(kind);
+              setOffset(0);
+              setSelected(null);
+              setView("resources");
             }}
           />
         ) : (
@@ -379,8 +358,8 @@ export default function App() {
                 onSelect={setSelected}
                 selected={selected}
                 onOffsetChange={(o) => {
-                  setOffset(o)
-                  setSelected(null)
+                  setOffset(o);
+                  setSelected(null);
                 }}
               />
             </div>
@@ -391,5 +370,5 @@ export default function App() {
         )}
       </div>
     </div>
-  )
+  );
 }

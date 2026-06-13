@@ -3,13 +3,12 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@11.5.2",
   "scripts": {
     "build": "vite build && touch dist/.gitkeep",
     "dev": "vite",
     "lint": "oxlint .",
-    "format": "oxfmt -w .",
-    "format:check": "oxfmt .",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
     "test": "vitest run",
     "openapi-ts": "openapi-typescript ../../../openapi.yaml -o src/gen/api.d.ts",
     "sync:pin": "node ../../scripts/sync-frontend.ts --pin"
@@ -26,10 +25,11 @@
     "@vitejs/plugin-react": "^6.0.0",
     "jsdom": "^29.0.0",
     "openapi-typescript": "^7.13.0",
-    "oxfmt": "^0.1.0",
+    "oxfmt": "^0.53.0",
     "oxlint": "^1.0.0",
     "typescript": "^6.0.0",
     "vite": "^8.0.0",
     "vitest": "^4.0.0"
-  }
+  },
+  "packageManager": "pnpm@11.5.2"
 }

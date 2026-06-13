@@ -1,14 +1,10 @@
 interface Props {
-  namespaces: string[]
-  selected: string
-  onSelect: (ns: string) => void
+  namespaces: string[];
+  selected: string;
+  onSelect: (ns: string) => void;
 }
 
-export default function NamespaceList({
-  namespaces,
-  selected,
-  onSelect,
-}: Props) {
+export default function NamespaceList({ namespaces, selected, onSelect }: Props) {
   return (
     <div>
       <div
@@ -35,5 +31,5 @@ export default function NamespaceList({
         </div>
       ))}
     </div>
-  )
+  );
 }

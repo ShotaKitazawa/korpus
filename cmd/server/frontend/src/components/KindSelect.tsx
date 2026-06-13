@@ -1,44 +1,42 @@
-import { useEffect, useState } from "react"
-import type { GVKInfo } from "../api.ts"
+import { useEffect, useState } from "react";
+import type { GVKInfo } from "../api.ts";
 
 interface Props {
-  gvks: GVKInfo[]
-  value: string
-  onChange: (info: GVKInfo | null) => void
+  gvks: GVKInfo[];
+  value: string;
+  onChange: (info: GVKInfo | null) => void;
 }
 
 export default function KindSelect({ gvks, value, onChange }: Props) {
-  const [inputValue, setInputValue] = useState(value)
-  const [isFocused, setIsFocused] = useState(false)
+  const [inputValue, setInputValue] = useState(value);
+  const [isFocused, setIsFocused] = useState(false);
 
   useEffect(() => {
-    if (!isFocused) setInputValue(value)
-  }, [value, isFocused])
+    if (!isFocused) setInputValue(value);
+  }, [value, isFocused]);
 
   const handleFocus = () => {
-    setIsFocused(true)
-    setInputValue("")
-  }
+    setIsFocused(true);
+    setInputValue("");
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const v = e.target.value
-    setInputValue(v)
-    const match = gvks.find((g) => `${g.group}/${g.version}/${g.kind}` === v)
-    if (match) onChange(match)
-  }
+    const v = e.target.value;
+    setInputValue(v);
+    const match = gvks.find((g) => `${g.group}/${g.version}/${g.kind}` === v);
+    if (match) onChange(match);
+  };
 
   const handleBlur = () => {
-    setIsFocused(false)
-    const match = gvks.find(
-      (g) => `${g.group}/${g.version}/${g.kind}` === inputValue,
-    )
-    if (!match) setInputValue(value)
-  }
+    setIsFocused(false);
+    const match = gvks.find((g) => `${g.group}/${g.version}/${g.kind}` === inputValue);
+    if (!match) setInputValue(value);
+  };
 
   const handleClear = () => {
-    setInputValue("")
-    onChange(null)
-  }
+    setInputValue("");
+    onChange(null);
+  };
 
   return (
     <div style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
@@ -78,5 +76,5 @@ export default function KindSelect({ gvks, value, onChange }: Props) {
         ))}
       </datalist>
     </div>
-  )
+  );
 }

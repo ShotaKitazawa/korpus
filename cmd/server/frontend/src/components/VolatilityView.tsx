@@ -1,44 +1,42 @@
-import { useEffect, useState } from "react"
-import { api, type VolatilityEntry, type FieldVolatilityEntry } from "../api.ts"
+import { useEffect, useState } from "react";
+import { api, type VolatilityEntry, type FieldVolatilityEntry } from "../api.ts";
 
 interface Props {
-  onSelectResource: (group: string, kind: string) => void
+  onSelectResource: (group: string, kind: string) => void;
 }
 
 export default function VolatilityView({ onSelectResource }: Props) {
-  const [entries, setEntries] = useState<VolatilityEntry[]>([])
-  const [loading, setLoading] = useState(false)
-  const [commits, setCommits] = useState(50)
-  const [threshold, setThreshold] = useState(0.5)
-  const [selectedEntry, setSelectedEntry] = useState<VolatilityEntry | null>(
-    null,
-  )
-  const [fieldEntries, setFieldEntries] = useState<FieldVolatilityEntry[]>([])
-  const [fieldLoading, setFieldLoading] = useState(false)
+  const [entries, setEntries] = useState<VolatilityEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [commits, setCommits] = useState(50);
+  const [threshold, setThreshold] = useState(0.5);
+  const [selectedEntry, setSelectedEntry] = useState<VolatilityEntry | null>(null);
+  const [fieldEntries, setFieldEntries] = useState<FieldVolatilityEntry[]>([]);
+  const [fieldLoading, setFieldLoading] = useState(false);
 
   const load = () => {
-    setLoading(true)
+    setLoading(true);
     api
       .GET("/api/volatility", {
         params: { query: { commits, threshold } },
       })
       .then(({ data }) => {
-        setEntries(data?.items ?? [])
-        setLoading(false)
+        setEntries(data?.items ?? []);
+        setLoading(false);
       })
-      .catch(() => setLoading(false))
-  }
+      .catch(() => setLoading(false));
+  };
 
   useEffect(() => {
-    load()
-  }, [])
+    load();
+  }, []);
 
   useEffect(() => {
     if (!selectedEntry) {
-      setFieldEntries([])
-      return
+      setFieldEntries([]);
+      return;
     }
-    setFieldLoading(true)
+    setFieldLoading(true);
     api
       .GET("/api/volatility/fields", {
         params: {
@@ -53,11 +51,11 @@ export default function VolatilityView({ onSelectResource }: Props) {
         },
       })
       .then(({ data }) => {
-        setFieldEntries(data ?? [])
-        setFieldLoading(false)
+        setFieldEntries(data ?? []);
+        setFieldLoading(false);
       })
-      .catch(() => setFieldLoading(false))
-  }, [selectedEntry, commits])
+      .catch(() => setFieldLoading(false));
+  }, [selectedEntry, commits]);
 
   return (
     <div
@@ -129,38 +127,29 @@ export default function VolatilityView({ onSelectResource }: Props) {
           >
             Refresh
           </button>
-          {loading && (
-            <span style={{ fontSize: 12, color: "#888" }}>loading…</span>
-          )}
+          {loading && <span style={{ fontSize: 12, color: "#888" }}>loading…</span>}
         </div>
 
         {!loading && entries.length === 0 && (
           <div style={{ color: "#888", fontSize: 13 }}>
-            no high-volatility resources found (threshold:{" "}
-            {(threshold * 100).toFixed(0)}%)
+            no high-volatility resources found (threshold: {(threshold * 100).toFixed(0)}%)
           </div>
         )}
 
         {entries.length > 0 && (
-          <table
-            style={{ borderCollapse: "collapse", fontSize: 12, width: "100%" }}
-          >
+          <table style={{ borderCollapse: "collapse", fontSize: 12, width: "100%" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid #ccc", textAlign: "left" }}>
                 <th style={{ padding: "4px 12px 4px 0" }}>resource</th>
                 <th style={{ padding: "4px 12px 4px 0" }}>cluster</th>
-                <th style={{ padding: "4px 12px 4px 0", textAlign: "right" }}>
-                  changed
-                </th>
-                <th style={{ padding: "4px 8px 4px 0", textAlign: "right" }}>
-                  ratio
-                </th>
+                <th style={{ padding: "4px 12px 4px 0", textAlign: "right" }}>changed</th>
+                <th style={{ padding: "4px 8px 4px 0", textAlign: "right" }}>ratio</th>
                 <th style={{ padding: "4px 0" }} />
               </tr>
             </thead>
             <tbody>
               {entries.map((e, i) => {
-                const pct = (e.ratio * 100).toFixed(0)
+                const pct = (e.ratio * 100).toFixed(0);
                 const heat =
                   e.ratio >= 0.9
                     ? "#c00"
@@ -168,13 +157,13 @@ export default function VolatilityView({ onSelectResource }: Props) {
                       ? "#d66"
                       : e.ratio >= 0.5
                         ? "#b84"
-                        : "#666"
+                        : "#666";
                 const isSelected =
                   selectedEntry?.cluster === e.cluster &&
                   selectedEntry?.group === e.group &&
                   selectedEntry?.kind === e.kind &&
                   selectedEntry?.namespace === e.namespace &&
-                  selectedEntry?.name === e.name
+                  selectedEntry?.name === e.name;
                 return (
                   <tr
                     key={i}
@@ -189,9 +178,7 @@ export default function VolatilityView({ onSelectResource }: Props) {
                       {e.group}/{e.kind}/{e.namespace ? e.namespace + "/" : ""}
                       {e.name}
                     </td>
-                    <td style={{ padding: "5px 12px 5px 0", color: "#666" }}>
-                      {e.cluster}
-                    </td>
+                    <td style={{ padding: "5px 12px 5px 0", color: "#666" }}>{e.cluster}</td>
                     <td
                       style={{
                         padding: "5px 12px 5px 0",
@@ -214,8 +201,8 @@ export default function VolatilityView({ onSelectResource }: Props) {
                     <td style={{ padding: "5px 0" }}>
                       <button
                         onClick={(ev) => {
-                          ev.stopPropagation()
-                          onSelectResource(e.group, e.kind)
+                          ev.stopPropagation();
+                          onSelectResource(e.group, e.kind);
                         }}
                         title={`view resources of kind ${e.kind}`}
                         style={{
@@ -233,7 +220,7 @@ export default function VolatilityView({ onSelectResource }: Props) {
                       </button>
                     </td>
                   </tr>
-                )
+                );
               })}
             </tbody>
           </table>
@@ -253,9 +240,7 @@ export default function VolatilityView({ onSelectResource }: Props) {
               {selectedEntry.namespace ? selectedEntry.namespace + "/" : ""}
               {selectedEntry.name}
             </div>
-            {fieldLoading && (
-              <div style={{ fontSize: 12, color: "#888" }}>loading…</div>
-            )}
+            {fieldLoading && <div style={{ fontSize: 12, color: "#888" }}>loading…</div>}
             {!fieldLoading && fieldEntries.length === 0 && (
               <div style={{ fontSize: 12, color: "#888" }}>no field data</div>
             )}
@@ -275,21 +260,13 @@ export default function VolatilityView({ onSelectResource }: Props) {
                     }}
                   >
                     <th style={{ padding: "4px 12px 4px 0" }}>field</th>
-                    <th
-                      style={{ padding: "4px 12px 4px 0", textAlign: "right" }}
-                    >
-                      changed
-                    </th>
-                    <th
-                      style={{ padding: "4px 8px 4px 0", textAlign: "right" }}
-                    >
-                      ratio
-                    </th>
+                    <th style={{ padding: "4px 12px 4px 0", textAlign: "right" }}>changed</th>
+                    <th style={{ padding: "4px 8px 4px 0", textAlign: "right" }}>ratio</th>
                   </tr>
                 </thead>
                 <tbody>
                   {fieldEntries.map((f, i) => {
-                    const pct = (f.ratio * 100).toFixed(0)
+                    const pct = (f.ratio * 100).toFixed(0);
                     const heat =
                       f.ratio >= 0.9
                         ? "#c00"
@@ -297,7 +274,7 @@ export default function VolatilityView({ onSelectResource }: Props) {
                           ? "#d66"
                           : f.ratio >= 0.5
                             ? "#b84"
-                            : "#666"
+                            : "#666";
                     return (
                       <tr key={i} style={{ borderBottom: "1px solid #eee" }}>
                         <td
@@ -329,7 +306,7 @@ export default function VolatilityView({ onSelectResource }: Props) {
                           {pct}%
                         </td>
                       </tr>
-                    )
+                    );
                   })}
                 </tbody>
               </table>
@@ -338,5 +315,5 @@ export default function VolatilityView({ onSelectResource }: Props) {
         )}
       </div>
     </div>
-  )
+  );
 }
