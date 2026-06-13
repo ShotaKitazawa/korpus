@@ -16,9 +16,13 @@ jobs:
 
       - name: Set image tags in manifests
         working-directory: manifests
+        env:
+          REPO: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          kustomize edit set image ghcr.io/${{ github.repository }}=ghcr.io/${{ github.repository }}:release-${{ github.ref_name }}
-          kustomize edit set image ghcr.io/${{ github.repository }}-server=ghcr.io/${{ github.repository }}-server:release-${{ github.ref_name }}
+          REPO_LOWER=$(echo "$REPO" | tr '[:upper:]' '[:lower:]')
+          kustomize edit set image ghcr.io/${REPO_LOWER}:release-${REF_NAME}
+          kustomize edit set image ghcr.io/${REPO_LOWER}-server:release-${REF_NAME}
 
       - name: Build install.yaml
         run: kustomize build ./manifests > install.yaml
