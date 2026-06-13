@@ -4,8 +4,11 @@
     "config:recommended"
   ],
   "minimumReleaseAge": "3 days",
-  "automerge": true,
   "packageRules": [
+    {
+      "matchUpdateTypes": ["patch"],
+      "automerge": true
+    },
     {
       "matchManagers": ["mise"],
       "enabled": false
