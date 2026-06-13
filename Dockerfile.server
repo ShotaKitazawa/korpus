@@ -17,6 +17,8 @@ COPY . .
 COPY --from=frontend-builder /app/dist ./cmd/server/frontend/dist
 RUN CGO_ENABLED=0 go build -trimpath -o server ./cmd/server
 
-FROM gcr.io/distroless/static:nonroot
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=go-builder /app/server /server
+USER nobody
 ENTRYPOINT ["/server"]
