@@ -207,7 +207,7 @@ type clusterStatus struct {
 
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to config file")
-	pprofAddr := flag.String("pprof-addr", ":6060", "address for pprof debug server; empty to disable")
+	pprofAddr := flag.String("pprof-addr", "", "address for pprof debug server (e.g. :6060); disabled when empty")
 	enableFgprof := flag.Bool("fgprof", false, "add /debug/fgprof wall-clock profile endpoint (requires --pprof-addr)")
 	flag.Parse()
 
