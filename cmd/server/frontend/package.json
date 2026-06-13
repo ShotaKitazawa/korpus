@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.34.1",
+  "packageManager": "pnpm@11.5.2",
   "scripts": {
     "build": "vite build && touch dist/.gitkeep",
     "dev": "vite",
