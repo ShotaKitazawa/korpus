@@ -4,6 +4,7 @@ go = "1.26.1"
 node = "22"
 air = "latest"
 pnpm = "10.33.0"
+kustomize = "5.8.1"
 
 [tasks.tidy]
 run = "go mod tidy"
