@@ -1,11 +1,11 @@
 package gitindex
 
 import (
+	"fmt"
+	"os/exec"
 	"sort"
+	"strings"
 	"time"
-
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
 // CommitRef is a (time, sha) pair used for binary search by datetime.
@@ -19,27 +19,37 @@ type CommitIndex struct {
 	refs []CommitRef // sorted ascending by Time
 }
 
-// BuildCommitIndex walks the repository log and builds a sorted CommitIndex.
-func BuildCommitIndex(repo *git.Repository) (*CommitIndex, error) {
-	iter, err := repo.Log(&git.LogOptions{Order: git.LogOrderCommitterTime})
+// BuildCommitIndex walks the repository log using exec-based git commands and
+// builds a sorted CommitIndex. workDir is the root of the git working tree.
+func BuildCommitIndex(workDir string) (*CommitIndex, error) {
+	cmd := exec.Command("git", "log", "--pretty=format:%H %aI")
+	cmd.Dir = workDir
+	out, err := cmd.Output()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("git log: %w", err)
 	}
-	defer iter.Close()
 
 	var refs []CommitRef
-	err = iter.ForEach(func(c *object.Commit) error {
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimRight(line, "\r")
+		if line == "" {
+			continue
+		}
+		sha, rest, ok := strings.Cut(line, " ")
+		if !ok {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, rest)
+		if err != nil {
+			continue
+		}
 		refs = append(refs, CommitRef{
-			Time: c.Author.When.UTC(),
-			SHA:  c.Hash.String(),
+			Time: t.UTC(),
+			SHA:  sha,
 		})
-		return nil
-	})
-	if err != nil {
-		return nil, err
 	}
 
-	// repo.Log returns newest-first; reverse to oldest-first so SliceStable
+	// git log outputs newest-first; reverse to oldest-first so SliceStable
 	// preserves topological order for equal timestamps — the newest commit among
 	// same-second entries ends up at the highest index, which is what FindBefore needs.
 	for i, j := 0, len(refs)-1; i < j; i, j = i+1, j-1 {

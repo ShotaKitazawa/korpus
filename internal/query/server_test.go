@@ -145,7 +145,7 @@ func buildGitStub(t *testing.T, clusterName string) *stubCluster {
 	idx := index.New(clusterName, nil)
 	require.NoError(t, idx.Build(workDir))
 
-	commitIdx, err := gitindex.BuildCommitIndex(gc.Repo())
+	commitIdx, err := gitindex.BuildCommitIndex(workDir)
 	require.NoError(t, err)
 	changeIdx, err := gitindex.BuildChangeIndex(gc.Repo(), workDir, clusterName, "", 30)
 	require.NoError(t, err)
