@@ -277,7 +277,7 @@ func main() {
 
 			indexDir := filepath.Join(workDir, c.Git.SubDir)
 			if buildErr := state.rebuildIndexes(indexDir, c.Name, cfg.Spec.Index.HistoryDays); buildErr != nil {
-				logger.Warn("index build", "cluster", c.Name, "err", buildErr)
+				logger.Error("index build", "cluster", c.Name, "err", buildErr)
 				state.recordPull(buildErr)
 			} else {
 				logger.Info("initialization done", "cluster", c.Name, "totalElapsed", time.Since(tStart).Round(time.Millisecond))
@@ -319,7 +319,7 @@ func main() {
 					}
 					indexDir = filepath.Join(workDir, c.Git.SubDir)
 					if buildErr := state.rebuildIndexes(indexDir, c.Name, cfg.Spec.Index.HistoryDays); buildErr != nil {
-						logger.Warn("index rebuild", "cluster", c.Name, "err", buildErr)
+						logger.Error("index rebuild", "cluster", c.Name, "err", buildErr)
 						state.recordPull(buildErr)
 					} else {
 						state.recordPull(nil)
