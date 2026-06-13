@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -338,6 +340,11 @@ func buildMux(ctx context.Context, cfg *config.ServerConfig, states map[string]*
 	wkPath := "/.well-known/oauth-protected-resource"
 	if cfg.Spec.OIDC != nil {
 		wkPath = protectedResourceWellKnownPath(cfg.Spec.OIDC.Audience)
+		baseURL := resourceBaseURL(cfg.Spec.OIDC.Audience)
+		mux.HandleFunc("GET /.well-known/openid-configuration",
+			oidcDiscoveryProxyHandler(cfg.Spec.OIDC.Issuer, baseURL))
+		mux.HandleFunc("POST /oauth2/register",
+			oidcRegistrationProxyHandler(cfg.Spec.OIDC.Issuer, cfg.Spec.OIDC.Audience))
 	}
 	mux.HandleFunc(wkPath, oauthProtectedResourceHandler(cfg))
 	mux.HandleFunc("/auth-config", authConfigHandler(cfg))
@@ -668,7 +675,7 @@ func oauthProtectedResourceHandler(cfg *config.ServerConfig) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 			"resource":                 cfg.Spec.OIDC.Audience,
-			"authorization_servers":    []string{cfg.Spec.OIDC.Issuer},
+			"authorization_servers":    []string{resourceBaseURL(cfg.Spec.OIDC.Audience)},
 			"bearer_methods_supported": []string{"header"},
 		})
 	}
@@ -694,4 +701,174 @@ func authConfigHandler(cfg *config.ServerConfig) http.HandlerFunc {
 func mustJSON(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
+}
+
+// resourceBaseURL extracts the scheme+host from an audience URI.
+// e.g. "https://korpus.kanatakita.com/mcp" → "https://korpus.kanatakita.com"
+func resourceBaseURL(audience string) string {
+	u, err := url.Parse(audience)
+	if err != nil || u.Host == "" {
+		return audience
+	}
+	return u.Scheme + "://" + u.Host
+}
+
+// mergeAudience injects audience into the "audience" array of a DCR JSON body,
+// deduplicating while preserving the original order.
+func mergeAudience(body []byte, audience string) []byte {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return body
+	}
+	var existing []string
+	if v, ok := obj["audience"]; ok {
+		_ = json.Unmarshal(v, &existing)
+	}
+	seen := make(map[string]bool, len(existing)+1)
+	merged := make([]string, 0, len(existing)+1)
+	for _, a := range existing {
+		if !seen[a] {
+			seen[a] = true
+			merged = append(merged, a)
+		}
+	}
+	if !seen[audience] {
+		merged = append(merged, audience)
+	}
+	raw, err := json.Marshal(merged)
+	if err != nil {
+		return body
+	}
+	obj["audience"] = raw
+	newBody, err := json.Marshal(obj)
+	if err != nil {
+		return body
+	}
+	return newBody
+}
+
+// oidcDiscoveryProxyHandler proxies the OIDC discovery document from issuer,
+// rewriting registration_endpoint to baseURL+"/oauth2/register".
+// The rewritten document is cached for 5 minutes.
+func oidcDiscoveryProxyHandler(issuer, baseURL string) http.HandlerFunc {
+	const ttl = 5 * time.Minute
+	var (
+		mu       sync.Mutex
+		cached   []byte
+		cachedAt time.Time
+	)
+
+	fetch := func() ([]byte, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if cached != nil && time.Since(cachedAt) < ttl {
+			return cached, nil
+		}
+		resp, err := http.Get(issuer + "/.well-known/openid-configuration") //nolint:noctx
+		if err != nil {
+			return nil, fmt.Errorf("fetch discovery: %w", err)
+		}
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("read discovery: %w", err)
+		}
+		var doc map[string]json.RawMessage
+		if err := json.Unmarshal(body, &doc); err != nil {
+			return nil, fmt.Errorf("parse discovery: %w", err)
+		}
+		regEndpoint, _ := json.Marshal(baseURL + "/oauth2/register")
+		doc["registration_endpoint"] = regEndpoint
+		if body, err = json.Marshal(doc); err != nil {
+			return nil, fmt.Errorf("marshal discovery: %w", err)
+		}
+		cached = body
+		cachedAt = time.Now()
+		return body, nil
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		body, err := fetch()
+		if err != nil {
+			slog.Error("oidc discovery proxy", "err", err)
+			http.Error(w, "upstream error", http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(body) //nolint:errcheck
+	}
+}
+
+// oidcRegistrationProxyHandler proxies DCR POST requests to the upstream
+// registration_endpoint discovered from the issuer's OIDC discovery document,
+// injecting the configured audience before forwarding.
+func oidcRegistrationProxyHandler(issuer, audience string) http.HandlerFunc {
+	var (
+		mu       sync.Mutex
+		upstream string
+		fetched  bool
+	)
+
+	getUpstream := func() (string, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if fetched {
+			return upstream, nil
+		}
+		resp, err := http.Get(issuer + "/.well-known/openid-configuration") //nolint:noctx
+		if err != nil {
+			return "", fmt.Errorf("fetch discovery: %w", err)
+		}
+		defer resp.Body.Close()
+		var doc struct {
+			RegistrationEndpoint string `json:"registration_endpoint"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+			return "", fmt.Errorf("parse discovery: %w", err)
+		}
+		upstream = doc.RegistrationEndpoint
+		fetched = true
+		return upstream, nil
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		up, err := getUpstream()
+		if err != nil {
+			slog.Error("oidc registration upstream", "err", err)
+			http.Error(w, "upstream not available", http.StatusBadGateway)
+			return
+		}
+		body, err := io.ReadAll(r.Body)
+		r.Body.Close()
+		if err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		body = mergeAudience(body, audience)
+
+		req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, up, bytes.NewReader(body))
+		if err != nil {
+			http.Error(w, "bad gateway", http.StatusBadGateway)
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if v := r.Header.Get("Authorization"); v != "" {
+			req.Header.Set("Authorization", v)
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			slog.Error("oidc registration proxy", "err", err)
+			http.Error(w, "bad gateway", http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+		for k, vs := range resp.Header {
+			for _, v := range vs {
+				w.Header().Add(k, v)
+			}
+		}
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body) //nolint:errcheck
+	}
 }
