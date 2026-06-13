@@ -145,7 +145,7 @@ metadata:
 
 	commitIdx, err := gitindex.BuildCommitIndex(client.Repo())
 	require.NoError(t, err)
-	changeIdx, err := gitindex.BuildChangeIndex(client.Repo(), "test-cluster", "", 30)
+	changeIdx, err := gitindex.BuildChangeIndex(client.Repo(), workDir, "test-cluster", "", 30)
 	require.NoError(t, err)
 
 	state := &ClusterState{idx: idx, subDir: ""}

@@ -11,6 +11,8 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	_ "net/http/pprof"
+
 	"net/url"
 	"os"
 	"os/signal"
@@ -19,6 +21,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/felixge/fgprof"
 
 	"embed"
 
@@ -104,25 +108,38 @@ func (s *ClusterState) setGit(gc *gitclient.Client, workDir string) {
 }
 
 func (s *ClusterState) rebuildIndexes(dir, clusterName string, historyDays int) error {
+	logger := slog.Default()
+
+	t0 := time.Now()
 	if err := s.idx.Build(dir); err != nil {
 		return err
 	}
+	logger.Info("index.Build done", "cluster", clusterName, "elapsed", time.Since(t0).Round(time.Millisecond))
+
 	s.mu.RLock()
 	gc := s.gc
 	subDir := s.subDir
+	workDir := s.workDir
 	s.mu.RUnlock()
 	if gc == nil {
 		return fmt.Errorf("git client not ready")
 	}
 	repo := gc.Repo()
+
+	t1 := time.Now()
 	commitIdx, err := gitindex.BuildCommitIndex(repo)
 	if err != nil {
 		return fmt.Errorf("build commit index: %w", err)
 	}
-	changeIdx, err := gitindex.BuildChangeIndex(repo, clusterName, subDir, historyDays)
+	logger.Info("BuildCommitIndex done", "cluster", clusterName, "elapsed", time.Since(t1).Round(time.Millisecond))
+
+	t2 := time.Now()
+	changeIdx, err := gitindex.BuildChangeIndex(repo, workDir, clusterName, subDir, historyDays)
 	if err != nil {
 		return fmt.Errorf("build change index: %w", err)
 	}
+	logger.Info("BuildChangeIndex done", "cluster", clusterName, "elapsed", time.Since(t2).Round(time.Millisecond))
+
 	s.mu.Lock()
 	s.commitIdx = commitIdx
 	s.changeIdx = changeIdx
@@ -193,11 +210,25 @@ type clusterStatus struct {
 
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to config file")
+	pprofAddr := flag.String("pprof-addr", "", "address for pprof debug server (e.g. :6060); disabled when empty")
+	enableFgprof := flag.Bool("fgprof", false, "add /debug/fgprof wall-clock profile endpoint (requires --pprof-addr)")
 	flag.Parse()
 
 	logger := slog.Default()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
+
+	if *pprofAddr != "" {
+		if *enableFgprof {
+			http.DefaultServeMux.Handle("/debug/fgprof", fgprof.Handler())
+		}
+		go func() {
+			logger.Info("pprof server starting", "addr", *pprofAddr)
+			if err := http.ListenAndServe(*pprofAddr, http.DefaultServeMux); err != nil {
+				logger.Error("pprof server", "err", err)
+			}
+		}()
+	}
 
 	cfg, err := config.LoadServer(*configPath)
 	if err != nil {
@@ -230,11 +261,13 @@ func main() {
 			}
 			defer os.RemoveAll(workDir)
 
+			t0 := time.Now()
 			gc, err := gitclient.Clone(ctx, c.Git.Repo, c.Git.Branch, c.Git.Token, c.Git.TokenFile, workDir, 0)
 			if err != nil {
 				logger.Error("git clone", "cluster", c.Name, "err", err)
 				return
 			}
+			logger.Info("git clone done", "cluster", c.Name, "elapsed", time.Since(t0).Round(time.Millisecond))
 			state.setGit(gc, workDir)
 
 			indexDir := filepath.Join(workDir, c.Git.SubDir)

@@ -1,14 +1,15 @@
 package gitindex
 
 import (
+	"bytes"
+	"fmt"
+	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing/object"
-	"github.com/go-git/go-git/v5/plumbing/storer"
-	"sigs.k8s.io/yaml"
 )
 
 // ChangeType describes what happened to a resource in a commit.
@@ -48,34 +49,120 @@ type ChangeIndex struct {
 	events []ChangeEvent
 }
 
-// BuildChangeIndex walks the git log from HEAD backwards for up to retentionDays,
-// extracts per-resource change events, and returns a time-sorted index.
-func BuildChangeIndex(repo *git.Repository, clusterName, subDir string, retentionDays int) (*ChangeIndex, error) {
+// kindRef pairs a git cat-file object name with the event that needs its kind.
+type kindRef struct {
+	objectName string // "<commit-sha>:<filepath>"
+	eventIdx   int
+}
+
+// BuildChangeIndex walks the git log for up to retentionDays using exec-based git commands
+// (avoiding go-git's Tree.Diff which causes Lstat storms on the pack filesystem).
+// workDir is the root of the git working tree.
+// The repo parameter is accepted for API compatibility but unused.
+func BuildChangeIndex(_ *git.Repository, workDir, clusterName, subDir string, retentionDays int) (*ChangeIndex, error) {
 	cutoff := time.Now().UTC().AddDate(0, 0, -retentionDays)
 
-	iter, err := repo.Log(&git.LogOptions{Order: git.LogOrderCommitterTime})
-	if err != nil {
-		return nil, err
+	args := []string{
+		"log",
+		"--name-status",
+		"--pretty=format:COMMIT %H %aI",
+		"--diff-filter=ADM",
+		"--no-renames",
+		"--since=" + cutoff.Format(time.RFC3339),
 	}
-	defer iter.Close()
+	if subDir != "" {
+		args = append(args, "--", subDir)
+	}
+
+	cmd := exec.Command("git", args...)
+	cmd.Dir = workDir
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git log --name-status: %w", err)
+	}
+
+	prefix := subDir
+	if prefix != "" && !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
 
 	var events []ChangeEvent
-	err = iter.ForEach(func(commit *object.Commit) error {
-		if commit.Author.When.UTC().Before(cutoff) {
-			return storer.ErrStop
+	var kindRefs []kindRef
+
+	var curSHA string
+	var curTime time.Time
+
+	for _, raw := range strings.Split(string(out), "\n") {
+		line := strings.TrimRight(raw, "\r")
+		if line == "" {
+			continue
 		}
-		if commit.NumParents() == 0 {
-			return nil // skip root commit (no parent to diff against)
+
+		if strings.HasPrefix(line, "COMMIT ") {
+			fields := strings.Fields(line)
+			if len(fields) < 3 {
+				continue
+			}
+			curSHA = fields[1]
+			t, _ := time.Parse(time.RFC3339, fields[2])
+			curTime = t.UTC()
+			continue
 		}
-		ev, err := eventsFromCommit(commit, clusterName, subDir)
-		if err != nil {
-			return nil // skip on error, don't abort
+
+		if curSHA == "" || len(line) < 2 || line[1] != '\t' {
+			continue
 		}
-		events = append(events, ev...)
-		return nil
-	})
-	if err != nil {
-		return nil, err
+		status := line[0]
+		if status != 'A' && status != 'M' && status != 'D' {
+			continue
+		}
+		filePath := line[2:]
+		if !strings.HasSuffix(filePath, ".yaml") {
+			continue
+		}
+		if prefix != "" && !strings.HasPrefix(filePath, prefix) {
+			continue
+		}
+		relPath := strings.TrimPrefix(filePath, prefix)
+		group, _, namespace, _, name, ok := ParseResourcePath(relPath)
+		if !ok {
+			continue
+		}
+
+		var ct ChangeType
+		switch status {
+		case 'A':
+			ct = Added
+		case 'D':
+			ct = Deleted
+		case 'M':
+			ct = Modified
+		}
+
+		idx := len(events)
+		events = append(events, ChangeEvent{
+			Timestamp:  curTime,
+			SHA:        curSHA,
+			Cluster:    clusterName,
+			Group:      group,
+			Namespace:  namespace,
+			Name:       name,
+			ChangeType: ct,
+		})
+		// Queue kind lookup for Added/Modified (file exists at this commit).
+		// Deleted files have Kind="" since they are gone from the commit tree.
+		if ct != Deleted {
+			kindRefs = append(kindRefs, kindRef{
+				objectName: curSHA + ":" + filePath,
+				eventIdx:   idx,
+			})
+		}
+	}
+
+	// Batch-read kinds via a single `git cat-file --batch` process.
+	kindMap := batchReadKinds(workDir, kindRefs)
+	for _, kr := range kindRefs {
+		events[kr.eventIdx].Kind = kindMap[kr.objectName]
 	}
 
 	sort.Slice(events, func(i, j int) bool {
@@ -84,92 +171,82 @@ func BuildChangeIndex(repo *git.Repository, clusterName, subDir string, retentio
 	return &ChangeIndex{events: events}, nil
 }
 
-// eventsFromCommit compares a commit with its first parent and returns ChangeEvents
-// for YAML files under subDir.
-func eventsFromCommit(commit *object.Commit, clusterName, subDir string) ([]ChangeEvent, error) {
-	parent, err := commit.Parents().Next()
+// batchReadKinds feeds "<commit>:<path>" object names into git cat-file --batch and
+// returns a map from object name to Kubernetes kind. Duplicates are deduplicated.
+func batchReadKinds(workDir string, refs []kindRef) map[string]string {
+	if len(refs) == 0 {
+		return nil
+	}
+
+	// Build deduplicated input; track insertion order to match output positions.
+	seen := make(map[string]struct{}, len(refs))
+	var sb strings.Builder
+	var ordered []string
+	for _, r := range refs {
+		if _, ok := seen[r.objectName]; ok {
+			continue
+		}
+		seen[r.objectName] = struct{}{}
+		sb.WriteString(r.objectName)
+		sb.WriteByte('\n')
+		ordered = append(ordered, r.objectName)
+	}
+
+	cmd := exec.Command("git", "cat-file", "--batch")
+	cmd.Dir = workDir
+	cmd.Stdin = strings.NewReader(sb.String())
+	out, err := cmd.Output()
 	if err != nil {
-		return nil, err
-	}
-	prevTree, err := parent.Tree()
-	if err != nil {
-		return nil, err
-	}
-	currTree, err := commit.Tree()
-	if err != nil {
-		return nil, err
+		return nil
 	}
 
-	changes, err := prevTree.Diff(currTree)
-	if err != nil {
-		return nil, err
-	}
+	// Parse cat-file output: one entry per input object, in the same order as ordered.
+	// Each entry: "<sha> <type> <size>\n<content>\n"
+	// or:         "<name> missing\n"  for unknown objects.
+	kindMap := make(map[string]string, len(ordered))
+	data := out
+	for _, objName := range ordered {
+		nl := bytes.IndexByte(data, '\n')
+		if nl < 0 {
+			break
+		}
+		header := data[:nl]
+		data = data[nl+1:]
 
-	prefix := subDir + "/"
-	if subDir == "" {
-		prefix = ""
-	}
-
-	var events []ChangeEvent
-	for _, change := range changes {
-		from, to, err := change.Files()
-		if err != nil {
+		parts := strings.Fields(string(header))
+		if len(parts) < 3 || parts[1] != "blob" {
+			// "missing" or unexpected type — no content follows.
 			continue
 		}
-
-		// Use Change.From/To.Name for the full repo-relative path because
-		// object.File.Name from Files() contains only the basename.
-		var filePath string
-		var ct ChangeType
-		var contentFile *object.File
-
-		switch {
-		case from == nil && to != nil:
-			filePath = change.To.Name
-			ct = Added
-			contentFile = to
-		case from != nil && to == nil:
-			filePath = change.From.Name
-			ct = Deleted
-			contentFile = from
-		case from != nil && to != nil:
-			filePath = change.To.Name
-			ct = Modified
-			contentFile = to
-		default:
-			continue
+		size, _ := strconv.Atoi(parts[2])
+		if size > len(data) {
+			break
+		}
+		content := data[:size]
+		data = data[size:]
+		if len(data) > 0 && data[0] == '\n' {
+			data = data[1:]
 		}
 
-		if prefix != "" && !strings.HasPrefix(filePath, prefix) {
-			continue
-		}
-		if !strings.HasSuffix(filePath, ".yaml") {
-			continue
-		}
-
-		relPath := filePath
-		if prefix != "" {
-			relPath = strings.TrimPrefix(filePath, prefix)
-		}
-		group, _, namespace, _, name, ok := ParseResourcePath(relPath)
-		if !ok {
-			continue
-		}
-
-		kind := kindFromFile(contentFile)
-
-		events = append(events, ChangeEvent{
-			Timestamp:  commit.Author.When.UTC(),
-			SHA:        commit.Hash.String(),
-			Cluster:    clusterName,
-			Group:      group,
-			Kind:       kind,
-			Namespace:  namespace,
-			Name:       name,
-			ChangeType: ct,
-		})
+		kindMap[objName] = kindFromYAML(content)
 	}
-	return events, nil
+	return kindMap
+}
+
+// kindFromYAML extracts the Kubernetes kind field from YAML content.
+// Only the first 512 bytes are examined since kind is always near the top.
+func kindFromYAML(content []byte) string {
+	limit := 512
+	if len(content) < limit {
+		limit = len(content)
+	}
+	for _, line := range bytes.Split(content[:limit], []byte("\n")) {
+		line = bytes.TrimSpace(line)
+		if bytes.HasPrefix(line, []byte("kind:")) {
+			return string(bytes.TrimSpace(bytes.TrimPrefix(line, []byte("kind:"))))
+		}
+	}
+	return ""
 }
 
 // Query returns a filtered, paginated slice of ChangeEvents (newest first) with total count.
@@ -231,9 +308,8 @@ func (ci *ChangeIndex) Query(
 func (ci *ChangeIndex) Volatility(cluster, group, kind, namespace, name string, maxCommits int) []VolatilityEntry {
 	type key struct{ cluster, group, kind, ns, name string }
 
-	// Walk events newest-first to respect maxCommits.
 	commitSeen := make(map[string]struct{})
-	counts := make(map[key]map[string]struct{}) // key → set of commit SHAs
+	counts := make(map[key]map[string]struct{})
 
 	for i := len(ci.events) - 1; i >= 0; i-- {
 		e := ci.events[i]
@@ -266,7 +342,6 @@ func (ci *ChangeIndex) Volatility(cluster, group, kind, namespace, name string, 
 	}
 
 	total := len(commitSeen)
-
 	result := make([]VolatilityEntry, 0, len(counts))
 	for k, shas := range counts {
 		result = append(result, VolatilityEntry{
@@ -280,23 +355,6 @@ func (ci *ChangeIndex) Volatility(cluster, group, kind, namespace, name string, 
 		})
 	}
 	return result
-}
-
-// kindFromFile reads a go-git File and extracts the Kubernetes kind field.
-func kindFromFile(f *object.File) string {
-	if f == nil {
-		return ""
-	}
-	content, err := f.Contents()
-	if err != nil {
-		return ""
-	}
-	var raw map[string]any
-	if err := yaml.Unmarshal([]byte(content), &raw); err != nil {
-		return ""
-	}
-	kind, _ := raw["kind"].(string)
-	return kind
 }
 
 // ParseResourcePath parses a subDir-relative path (without the subDir prefix) and returns
