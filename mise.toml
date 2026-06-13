@@ -90,6 +90,7 @@ run = "pnpm run test"
 dir = "{{config_root}}/cmd/server/frontend"
 
 [tasks.ci-build-frontend]
+depends = ["ci-install-frontend"]
 run = "pnpm run build"
 dir = "{{config_root}}/cmd/server/frontend"
 
