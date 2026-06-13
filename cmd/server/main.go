@@ -127,7 +127,7 @@ func (s *ClusterState) rebuildIndexes(dir, clusterName string, historyDays int) 
 	repo := gc.Repo()
 
 	t1 := time.Now()
-	commitIdx, err := gitindex.BuildCommitIndex(repo)
+	commitIdx, err := gitindex.BuildCommitIndex(workDir)
 	if err != nil {
 		return fmt.Errorf("build commit index: %w", err)
 	}

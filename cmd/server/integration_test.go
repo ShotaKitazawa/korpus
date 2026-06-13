@@ -143,7 +143,7 @@ metadata:
 	idx := index.New("test-cluster", []string{"metadata.labels"})
 	require.NoError(t, idx.Build(workDir))
 
-	commitIdx, err := gitindex.BuildCommitIndex(client.Repo())
+	commitIdx, err := gitindex.BuildCommitIndex(workDir)
 	require.NoError(t, err)
 	changeIdx, err := gitindex.BuildChangeIndex(client.Repo(), workDir, "test-cluster", "", 30)
 	require.NoError(t, err)
