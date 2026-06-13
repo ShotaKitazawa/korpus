@@ -65,10 +65,10 @@ func TestMergeAudience_NonJSONPassthrough(t *testing.T) {
 func TestOIDCDiscoveryProxyHandler_RewritesRegistrationEndpoint(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{
-			"issuer":                "https://auth.example.com",
+			"issuer":                 "https://auth.example.com",
 			"authorization_endpoint": "https://auth.example.com/oauth2/auth",
-			"token_endpoint":        "https://auth.example.com/oauth2/token",
-			"registration_endpoint": "https://auth.example.com/oauth2/register",
+			"token_endpoint":         "https://auth.example.com/oauth2/token",
+			"registration_endpoint":  "https://auth.example.com/oauth2/register",
 		})
 	}))
 	defer upstream.Close()
