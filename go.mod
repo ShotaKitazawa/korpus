@@ -4,9 +4,10 @@ go 1.26.1
 
 require (
 	github.com/coreos/go-oidc/v3 v3.18.0
+	github.com/felixge/fgprof v0.9.5
 	github.com/go-faster/errors v0.7.1
 	github.com/go-faster/jx v1.2.0
-	github.com/go-git/go-git/v5 v5.19.0
+	github.com/go-git/go-git/v5 v5.19.1
 	github.com/google/cel-go v0.28.1
 	github.com/mark3labs/mcp-go v0.54.0
 	github.com/ogen-go/ogen v1.20.3
@@ -37,7 +38,6 @@ require (
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/fatih/color v1.19.0 // indirect
-	github.com/felixge/fgprof v0.9.5 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/go-faster/yaml v0.4.6 // indirect
