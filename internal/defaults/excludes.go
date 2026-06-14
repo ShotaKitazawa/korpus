@@ -19,6 +19,9 @@ var BuiltinExcludeResources = []string{
 	"ciliumidentities.cilium.io",
 	// Argo Workflows — transient task execution results
 	"workflowtaskresults.argoproj.io",
+	// metrics-server — live CPU/memory values; no configuration information
+	"pods.metrics.k8s.io",
+	"nodes.metrics.k8s.io",
 }
 
 // BuiltinExcludeFields maps resource keys (in "resource.group" or "resource" form)
@@ -28,4 +31,10 @@ var BuiltinExcludeResources = []string{
 var BuiltinExcludeFields = map[string][]string{
 	// ArgoCD sets this on every reconcile loop — pure timestamp noise.
 	"applications.argoproj.io": {"status.reconciledAt"},
+	// Grafana Operator updates these on every reconcile loop.
+	"grafanadashboards.grafana.integreatly.org":      {"status.lastResync"},
+	"grafanadatasources.grafana.integreatly.org":     {"status.lastResync", "status.hash"},
+	"grafanaserviceaccounts.grafana.integreatly.org": {"status.lastResync", "status.conditions"},
+	// Node heartbeat — lastHeartbeatTime updates every ~10s regardless of node state.
+	"nodes": {"status.conditions[*].lastHeartbeatTime"},
 }

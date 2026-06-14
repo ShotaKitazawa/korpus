@@ -227,8 +227,8 @@ func TestResolveExcludeFields_Override(t *testing.T) {
 			},
 		},
 	}
-	// nodes: overrides — status is NOT excluded
-	assert.Equal(t, []string{"metadata.resourceVersion"},
+	// nodes: overrides — status is NOT excluded, but builtin lastHeartbeatTime is still appended
+	assert.Equal(t, []string{"metadata.resourceVersion", "status.conditions[*].lastHeartbeatTime"},
 		ResolveExcludeFields(cfg, "nodes", ""))
 	// other resources still use defaults
 	assert.Equal(t, []string{"metadata.resourceVersion", "status"},

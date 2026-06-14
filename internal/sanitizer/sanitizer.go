@@ -8,6 +8,7 @@ import "strings"
 //   - "status"                                     top-level key
 //   - "metadata.resourceVersion"                   dot-separated nested keys
 //   - `metadata.annotations["key/with.dots"]`      bracket notation for special keys
+//   - "status.conditions[*].lastHeartbeatTime"     [*] wildcard iterates every array element
 func DeleteField(obj map[string]any, path string) {
 	segments := parsePath(path)
 	if len(segments) == 0 {
@@ -81,6 +82,21 @@ func deleteAt(m map[string]any, segments []string) {
 	}
 	val, ok := m[segments[0]]
 	if !ok {
+		return
+	}
+	// [*] wildcard: apply the remaining path to every element of an array.
+	if len(segments) > 2 && segments[1] == "*" {
+		slice, ok := val.([]any)
+		if !ok {
+			return
+		}
+		for _, item := range slice {
+			elem, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			deleteAt(elem, segments[2:])
+		}
 		return
 	}
 	next, ok := val.(map[string]any)
