@@ -44,9 +44,6 @@ spec:
         branch: main
         subDir: cluster
         token: ${GIT_TOKEN}
-        author:
-          name: korpus-bot
-          email: korpus@example.com
 ```
 
 Run the backup daemon:
@@ -67,7 +64,7 @@ GIT_TOKEN=<token> docker run --rm \
   ghcr.io/shotakitazawa/korpus-server:latest --config /server.yaml
 ```
 
-Open http://localhost:8080.
+Open http://localhost:8080. For full configuration options, see [docs/configuration.md](docs/configuration.md).
 
 ## Usage
 
@@ -106,16 +103,18 @@ Pulls the backup repo every `server.pullInterval` (default: `10m`) and rebuilds 
 | `GET /` | React SPA |
 | `GET /healthz` | Health check |
 | `GET /api/clusters` | Cluster names |
-| `GET /api/groups?cluster=` | API groups |
-| `GET /api/kinds?cluster=&group=` | Resource kinds |
-| `GET /api/namespaces?cluster=` | Unique namespaces |
-| `GET /api/snapshot?cluster=&group=&kind=&namespace=&name=&cel=&datetime=&limit=&offset=` | Resource list at a point in time (omit `datetime` for current; `cel` is incompatible with `datetime`) |
-| `GET /api/resource?cluster=&group=&kind=&namespace=&name=` | Raw YAML of a single resource |
-| `GET /api/history?cluster=&group=&kind=&namespace=&name=&since=&until=&limit=&offset=` | Change history for a resource |
-| `GET /api/diff?cluster=&group=&kind=&namespace=&name=&from=&to=` | YAML diff between two commits |
-| `GET /api/volatility?cluster=&group=&kind=&namespace=&commits=&threshold=&limit=&offset=` | Resources ranked by change frequency |
-| `GET /api/volatility/fields?cluster=&group=&kind=&namespace=&name=&commits=` | Field-level change frequency for a resource |
+| `GET /api/groups` | API groups |
+| `GET /api/kinds` | Resource kinds |
+| `GET /api/namespaces` | Namespaces |
+| `GET /api/snapshot` | Resource list (CEL-filterable, point-in-time) |
+| `GET /api/resource` | Raw YAML of a single resource |
+| `GET /api/history` | Change history for a resource |
+| `GET /api/diff` | YAML diff between two commits |
+| `GET /api/volatility` | Resources ranked by change frequency |
+| `GET /api/volatility/fields` | Field-level change frequency |
 | `POST /mcp` | MCP server (Streamable HTTP) |
+
+For full parameter reference, see [openapi.yaml](openapi.yaml).
 
 **CEL expression examples** (used in `cel=` parameter of `/api/snapshot`):
 
@@ -125,7 +124,7 @@ object.metadata.labels["app"] == "nginx"
 object.status.phase == "Running"
 ```
 
-**MCP tools:** `list_clusters`, `list_groups`, `list_kinds`, `list_namespaces`, `get_resource`, `get_snapshot`, `get_history`, `get_diff`, `get_volatility`, `get_volatility_fields`
+**MCP tools:** `list_clusters`, `list_gvks`, `list_namespaces`, `get_resource`, `get_snapshot`, `get_history`, `get_diff`, `get_volatility`, `get_volatility_fields`
 
 **Connecting via MCP:**
 
@@ -145,108 +144,14 @@ Claude Desktop (`claude_desktop_config.json`):
 }
 ```
 
-When OIDC is enabled, Claude Code handles authentication automatically via
-OAuth 2.0 with Dynamic Client Registration (DCR). The server's
-`/.well-known/oauth-protected-resource` endpoint advertises the issuer,
-so no extra flags are needed:
+When OIDC is enabled, the same command works — Claude Code handles authentication automatically via OAuth 2.0 with Dynamic Client Registration. See [docs/dcr-flow.md](docs/dcr-flow.md) for details.
 
-```bash
-claude mcp add --transport http korpus http://localhost:8080/mcp
-```
-
-If your OIDC provider does not support DCR, pass a pre-obtained bearer token
-instead:
+If your OIDC provider does not support DCR, pass a pre-obtained bearer token instead:
 
 ```bash
 claude mcp add --transport http korpus http://localhost:8080/mcp \
   --header "Authorization: Bearer <token>"
 ```
-
-### config reference
-
-Each binary reads its own config file. Both use `kind`/`apiVersion` at the top level (Kubernetes-style).
-
-**korpus.yaml** (backup daemon):
-
-```yaml
-apiVersion: korpus.io/v1alpha1
-kind: KorpusConfig
-spec:
-  git:
-    repo: https://github.com/your-org/k8s-backup.git
-    branch: main
-    subDir: cluster
-    token: ${GIT_TOKEN}
-    author:
-      name: korpus-bot
-      email: korpus@example.com
-
-  backup:
-    schedule: "*/10 * * * *"
-
-    # Fields stripped from every resource (can be overridden per resource)
-    defaultExcludeFields:
-      - metadata.resourceVersion
-      - metadata.managedFields
-      - metadata.generation
-      - metadata.annotations["kubectl.kubernetes.io/last-applied-configuration"]
-
-    resources:
-      # Skip a resource entirely
-      - match: events
-        exclude: true
-
-      # Override excluded fields for a specific resource
-      # (replaces defaultExcludeFields for this resource)
-      - match: configmaps
-        excludeFields:
-          - metadata.resourceVersion
-          - metadata.managedFields
-```
-
-**server.yaml** (viewer):
-
-```yaml
-apiVersion: korpus.io/v1alpha1
-kind: ServerConfig
-spec:
-  addr: ":8080"
-  pullInterval: "10m"
-  clusters:
-    - name: prod
-      git:
-        repo: https://github.com/your-org/k8s-prod.git
-        branch: main
-        token: ${PROD_GIT_TOKEN}
-        author:
-          name: korpus-bot
-          email: korpus@example.com
-    # Add more clusters as needed:
-    # - name: staging
-    #   git:
-    #     repo: https://github.com/your-org/k8s-all.git
-    #     subDir: staging
-    #     token: ${STAGING_GIT_TOKEN}
-    #     author:
-    #       name: korpus-bot
-    #       email: korpus@example.com
-  index:
-    fields:
-      - metadata.labels
-      - metadata.creationTimestamp
-      # Add fields here to avoid disk I/O on queries that reference them:
-      # - spec.nodeName
-      # - spec.replicas
-  # Optional: enable OIDC authentication
-  # oidc:
-  #   issuer: https://your-idp.example.com/
-  #   audience: https://korpus.example.com
-  #   clientId: <your-client-id>
-```
-
-`${VAR}` placeholders in config values are expanded from environment variables at startup. Undefined variables cause a startup error.
-
-**Built-in excluded resources:** `secrets`, `events`, `leases.coordination.k8s.io`, `endpointslices.discovery.k8s.io`, `componentstatuses`, and transient cert-manager resources.
 
 ## Deploy to Kubernetes
 
