@@ -4,9 +4,20 @@ import { api, type VolatilityEntry, type FieldVolatilityEntry } from "../api.ts"
 interface Props {
   onSelectResource: (entry: VolatilityEntry) => void;
   isMobile?: boolean;
+  cluster?: string;
+  group?: string;
+  kind?: string;
+  namespace?: string;
 }
 
-export default function VolatilityView({ onSelectResource, isMobile }: Props) {
+export default function VolatilityView({
+  onSelectResource,
+  isMobile,
+  cluster,
+  group,
+  kind,
+  namespace,
+}: Props) {
   const [entries, setEntries] = useState<VolatilityEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [commits, setCommits] = useState(50);
@@ -19,7 +30,16 @@ export default function VolatilityView({ onSelectResource, isMobile }: Props) {
     setLoading(true);
     api
       .GET("/api/volatility", {
-        params: { query: { commits, threshold } },
+        params: {
+          query: {
+            commits,
+            threshold,
+            cluster: cluster || undefined,
+            group: group || undefined,
+            kind: kind || undefined,
+            namespace: namespace || undefined,
+          },
+        },
       })
       .then(({ data }) => {
         setEntries(data?.items ?? []);
@@ -30,7 +50,7 @@ export default function VolatilityView({ onSelectResource, isMobile }: Props) {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [cluster, group, kind, namespace]);
 
   useEffect(() => {
     if (!selectedEntry) {

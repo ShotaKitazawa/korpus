@@ -436,6 +436,10 @@ export default function App() {
         {view === "volatility" ? (
           <VolatilityView
             isMobile={isMobile}
+            cluster={selectedCluster || undefined}
+            group={selectedGroup || undefined}
+            kind={selectedKind || undefined}
+            namespace={selectedNamespace || undefined}
             onSelectResource={(e) => {
               setSelectedCluster(e.cluster);
               setSelectedGroup(e.group);
