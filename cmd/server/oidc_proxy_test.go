@@ -87,8 +87,8 @@ func TestOIDCDiscoveryProxyHandler_RewritesRegistrationEndpoint(t *testing.T) {
 	if got := doc["registration_endpoint"]; got != "https://app.example.com/oauth2/register" {
 		t.Fatalf("registration_endpoint = %v, want https://app.example.com/oauth2/register", got)
 	}
-	if got := doc["authorization_endpoint"]; got != "https://auth.example.com/oauth2/auth" {
-		t.Fatalf("authorization_endpoint should be preserved, got %v", got)
+	if got := doc["authorization_endpoint"]; got != "https://app.example.com/oauth2/auth" {
+		t.Fatalf("authorization_endpoint = %v, want https://app.example.com/oauth2/auth", got)
 	}
 }
 
@@ -187,6 +187,59 @@ func TestOIDCRegistrationProxyHandler_UpstreamDiscoveryError(t *testing.T) {
 	handler := oidcRegistrationProxyHandler("http://127.0.0.1:0", "https://korpus.example.com/mcp")
 	w := httptest.NewRecorder()
 	handler(w, httptest.NewRequest("POST", "/oauth2/register", strings.NewReader("{}")))
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d", w.Code)
+	}
+}
+
+func TestOIDCAuthProxyHandler_InjectsAudience(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"authorization_endpoint": "http://" + r.Host + "/oauth2/auth",
+		})
+	}))
+	defer upstream.Close()
+
+	handler := oidcAuthProxyHandler(upstream.URL, "https://korpus.example.com/mcp")
+	w := httptest.NewRecorder()
+	handler(w, httptest.NewRequest("GET", "/oauth2/auth?response_type=code&client_id=abc&state=xyz", nil))
+
+	if w.Code != http.StatusFound {
+		t.Fatalf("expected 302, got %d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "audience=https%3A%2F%2Fkorpus.example.com%2Fmcp") {
+		t.Fatalf("audience not injected in redirect: %s", loc)
+	}
+	if !strings.Contains(loc, "state=xyz") {
+		t.Fatalf("original params not preserved in redirect: %s", loc)
+	}
+}
+
+func TestOIDCAuthProxyHandler_DeduplicatesAudience(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{
+			"authorization_endpoint": "http://" + r.Host + "/oauth2/auth",
+		})
+	}))
+	defer upstream.Close()
+
+	handler := oidcAuthProxyHandler(upstream.URL, "https://korpus.example.com/mcp")
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/oauth2/auth?audience=https%3A%2F%2Fkorpus.example.com%2Fmcp", nil)
+	handler(w, req)
+
+	loc := w.Header().Get("Location")
+	count := strings.Count(loc, "https%3A%2F%2Fkorpus.example.com%2Fmcp")
+	if count != 1 {
+		t.Fatalf("expected audience once in redirect, got %d: %s", count, loc)
+	}
+}
+
+func TestOIDCAuthProxyHandler_UpstreamDiscoveryError(t *testing.T) {
+	handler := oidcAuthProxyHandler("http://127.0.0.1:0", "https://korpus.example.com/mcp")
+	w := httptest.NewRecorder()
+	handler(w, httptest.NewRequest("GET", "/oauth2/auth?response_type=code", nil))
 	if w.Code != http.StatusBadGateway {
 		t.Fatalf("expected 502, got %d", w.Code)
 	}
