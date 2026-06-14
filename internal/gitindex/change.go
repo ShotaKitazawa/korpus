@@ -1,8 +1,10 @@
 package gitindex
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"os/exec"
 	"sort"
 	"strconv"
@@ -173,6 +175,7 @@ func BuildChangeIndex(_ *git.Repository, workDir, clusterName, subDir string, re
 
 // batchReadKinds feeds "<commit>:<path>" object names into git cat-file --batch and
 // returns a map from object name to Kubernetes kind. Duplicates are deduplicated.
+// Output is streamed so only one file's content is in memory at a time.
 func batchReadKinds(workDir string, refs []kindRef) map[string]string {
 	if len(refs) == 0 {
 		return nil
@@ -195,40 +198,55 @@ func batchReadKinds(workDir string, refs []kindRef) map[string]string {
 	cmd := exec.Command("git", "cat-file", "--batch")
 	cmd.Dir = workDir
 	cmd.Stdin = strings.NewReader(sb.String())
-	out, err := cmd.Output()
+
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil
 	}
+	if err := cmd.Start(); err != nil {
+		return nil
+	}
+	defer cmd.Wait() //nolint:errcheck
 
-	// Parse cat-file output: one entry per input object, in the same order as ordered.
-	// Each entry: "<sha> <type> <size>\n<content>\n"
+	// Stream cat-file output: one entry per input object, in order.
+	// Each entry: "<sha> blob <size>\n<content>\n"
 	// or:         "<name> missing\n"  for unknown objects.
+	// Reading one file at a time keeps peak memory at O(max_file_size).
 	kindMap := make(map[string]string, len(ordered))
-	data := out
+	r := bufio.NewReader(stdout)
 	for _, objName := range ordered {
-		nl := bytes.IndexByte(data, '\n')
-		if nl < 0 {
+		header, err := r.ReadString('\n')
+		if err != nil {
 			break
 		}
-		header := data[:nl]
-		data = data[nl+1:]
-
-		parts := strings.Fields(string(header))
+		parts := strings.Fields(strings.TrimRight(header, "\r\n"))
 		if len(parts) < 3 || parts[1] != "blob" {
 			// "missing" or unexpected type — no content follows.
 			continue
 		}
 		size, _ := strconv.Atoi(parts[2])
-		if size > len(data) {
+
+		// Read only the first 512 bytes needed for kind extraction, discard the rest.
+		const kindWindow = 512
+		window := kindWindow
+		if size < window {
+			window = size
+		}
+		buf := make([]byte, window)
+		if _, err := io.ReadFull(r, buf); err != nil {
 			break
 		}
-		content := data[:size]
-		data = data[size:]
-		if len(data) > 0 && data[0] == '\n' {
-			data = data[1:]
+		if size > window {
+			if _, err := io.CopyN(io.Discard, r, int64(size-window)); err != nil {
+				break
+			}
+		}
+		// Consume trailing newline after content.
+		if b, err := r.ReadByte(); err == nil && b != '\n' {
+			r.UnreadByte() //nolint:errcheck
 		}
 
-		kindMap[objName] = kindFromYAML(content)
+		kindMap[objName] = kindFromYAML(buf)
 	}
 	return kindMap
 }
