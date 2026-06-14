@@ -61,7 +61,18 @@ function syncUrl(state: {
     params.set("selName", state.selected.name);
   }
   const search = params.toString() ? "?" + params.toString() : window.location.pathname;
-  history.replaceState(null, "", search);
+  const cur = new URLSearchParams(window.location.search);
+  const navChanged =
+    (cur.get("cluster") ?? "") !== state.cluster ||
+    (cur.get("group") ?? "") !== state.group ||
+    (cur.get("namespace") ?? "") !== state.namespace ||
+    (cur.get("kind") ?? "") !== state.kind ||
+    (cur.get("view") ?? "") !== (state.view !== "resources" ? state.view : "");
+  if (navChanged) {
+    history.pushState(null, "", search);
+  } else {
+    history.replaceState(null, "", search);
+  }
 }
 
 export default function App() {
@@ -92,6 +103,32 @@ export default function App() {
     namespace: readParam("selNamespace"),
     name: readParam("selName"),
   });
+
+  useEffect(() => {
+    const onPopState = () => {
+      setSelectedCluster(readParam("cluster"));
+      setSelectedGroup(readParam("group"));
+      setSelectedVersion(readParam("version"));
+      setSelectedNamespace(readParam("namespace"));
+      setSelectedKind(readParam("kind"));
+      setSearchQuery(readParam("q"));
+      setOffset(readIntParam("offset", 0));
+      setView(readParam("view") === "volatility" ? "volatility" : "resources");
+      setSelected(null);
+      const name = readParam("selName");
+      if (name) {
+        pendingSelect.current = {
+          cluster: readParam("selCluster"),
+          group: readParam("selGroup"),
+          kind: readParam("selKind"),
+          namespace: readParam("selNamespace"),
+          name,
+        };
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   useEffect(() => {
     api.GET("/api/clusters").then(({ data }) => {
