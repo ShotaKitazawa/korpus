@@ -11,6 +11,17 @@ import SearchBar from "./components/SearchBar.tsx";
 export type { SnapshotResource };
 
 const DEFAULT_LIMIT = 50;
+const MOBILE_BREAKPOINT = 768;
+
+function useIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= MOBILE_BREAKPOINT);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+  return isMobile;
+}
 
 function readParam(key: string): string {
   return new URLSearchParams(window.location.search).get(key) ?? "";
@@ -71,6 +82,8 @@ export default function App() {
   const [view, setView] = useState<"resources" | "volatility">(() =>
     readParam("view") === "volatility" ? "volatility" : "resources",
   );
+  const isMobile = useIsMobile();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const pendingSelect = useRef({
     cluster: readParam("selCluster"),
@@ -235,53 +248,90 @@ export default function App() {
     setOffset(0);
   };
 
+  const handleClusterSelect = (c: string) => {
+    setSelectedCluster(c);
+    setSelectedGroup("");
+    setSelectedVersion("");
+    setSelectedNamespace("");
+    setSelectedKind("");
+    setSearchQuery("");
+    setOffset(0);
+    setSelected(null);
+    if (isMobile) setSidebarOpen(false);
+  };
+
+  const handleNamespaceSelect = (ns: string) => {
+    setSelectedNamespace(ns);
+    setSearchQuery("");
+    setOffset(0);
+    setSelected(null);
+    if (isMobile) setSidebarOpen(false);
+  };
+
   return (
     <div style={{ display: "flex", height: "100vh", fontFamily: "monospace" }}>
-      <div
-        style={{
-          width: 200,
-          borderRight: "1px solid #ccc",
-          overflowY: "auto",
-          padding: 8,
-        }}
-      >
-        <ClusterList
-          clusters={clusters}
-          selected={selectedCluster}
-          onSelect={(c) => {
-            setSelectedCluster(c);
-            setSelectedGroup("");
-            setSelectedVersion("");
-            setSelectedNamespace("");
-            setSelectedKind("");
-            setSearchQuery("");
-            setOffset(0);
-            setSelected(null);
+      {/* Mobile: backdrop to close sidebar */}
+      {isMobile && sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100%",
+            height: "100%",
+            background: "rgba(0,0,0,0.3)",
+            zIndex: 99,
           }}
         />
+      )}
+
+      {/* Left sidebar */}
+      {(!isMobile || sidebarOpen) && (
         <div
           style={{
-            borderTop: "1px solid #eee",
-            marginTop: 8,
-            paddingTop: 4,
-            fontSize: "0.75em",
-            color: "#888",
+            ...(isMobile
+              ? {
+                  position: "fixed",
+                  top: 0,
+                  left: 0,
+                  height: "100vh",
+                  width: "80%",
+                  maxWidth: 280,
+                  zIndex: 100,
+                  background: "#fff",
+                }
+              : { width: 200 }),
+            borderRight: "1px solid #ccc",
+            overflowY: "auto",
+            padding: 8,
           }}
         >
-          namespace
+          <ClusterList
+            clusters={clusters}
+            selected={selectedCluster}
+            onSelect={handleClusterSelect}
+          />
+          <div
+            style={{
+              borderTop: "1px solid #eee",
+              marginTop: 8,
+              paddingTop: 4,
+              fontSize: "0.75em",
+              color: "#888",
+            }}
+          >
+            namespace
+          </div>
+          <NamespaceList
+            namespaces={namespaces}
+            selected={selectedNamespace}
+            onSelect={handleNamespaceSelect}
+          />
         </div>
-        <NamespaceList
-          namespaces={namespaces}
-          selected={selectedNamespace}
-          onSelect={(ns) => {
-            setSelectedNamespace(ns);
-            setSearchQuery("");
-            setOffset(0);
-            setSelected(null);
-          }}
-        />
-      </div>
-      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+      )}
+
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         <div
           style={{
             padding: 8,
@@ -289,8 +339,26 @@ export default function App() {
             display: "flex",
             gap: 8,
             alignItems: "center",
+            flexWrap: "wrap",
           }}
         >
+          {isMobile && (
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              style={{
+                fontFamily: "monospace",
+                fontSize: 16,
+                cursor: "pointer",
+                padding: "2px 8px",
+                background: "none",
+                border: "1px solid #ccc",
+                borderRadius: 2,
+                lineHeight: 1.4,
+              }}
+            >
+              ☰
+            </button>
+          )}
           <KindSelect
             gvks={gvks}
             value={selectedKind ? `${selectedGroup}/${selectedVersion}/${selectedKind}` : ""}
@@ -330,6 +398,7 @@ export default function App() {
 
         {view === "volatility" ? (
           <VolatilityView
+            isMobile={isMobile}
             onSelectResource={(group, kind) => {
               setSelectedGroup(group);
               setSelectedVersion("");
@@ -341,31 +410,42 @@ export default function App() {
           />
         ) : (
           <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-            <div
-              style={{
-                width: 300,
-                borderRight: "1px solid #ccc",
-                overflow: "hidden",
-                display: "flex",
-                flexDirection: "column",
-              }}
-            >
-              <ResourceList
-                resources={resources}
-                total={total}
-                offset={offset}
-                limit={DEFAULT_LIMIT}
-                onSelect={setSelected}
-                selected={selected}
-                onOffsetChange={(o) => {
-                  setOffset(o);
-                  setSelected(null);
+            {/* On mobile: show list only when no resource is selected */}
+            {(!isMobile || !selected) && (
+              <div
+                style={{
+                  width: isMobile ? "100%" : 300,
+                  borderRight: isMobile ? undefined : "1px solid #ccc",
+                  overflow: "hidden",
+                  display: "flex",
+                  flexDirection: "column",
                 }}
-              />
-            </div>
-            <div style={{ flex: 1, overflow: "hidden", padding: 8 }}>
-              <ResourceDetail resource={selected} yaml={detail} />
-            </div>
+              >
+                <ResourceList
+                  resources={resources}
+                  total={total}
+                  offset={offset}
+                  limit={DEFAULT_LIMIT}
+                  onSelect={setSelected}
+                  selected={selected}
+                  onOffsetChange={(o) => {
+                    setOffset(o);
+                    setSelected(null);
+                  }}
+                />
+              </div>
+            )}
+            {/* On mobile: show detail only when a resource is selected */}
+            {(!isMobile || selected) && (
+              <div style={{ flex: 1, overflow: "hidden", padding: 8 }}>
+                <ResourceDetail
+                  resource={selected}
+                  yaml={detail}
+                  isMobile={isMobile}
+                  onBack={isMobile ? () => setSelected(null) : undefined}
+                />
+              </div>
+            )}
           </div>
         )}
       </div>

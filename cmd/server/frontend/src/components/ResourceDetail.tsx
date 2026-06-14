@@ -213,9 +213,11 @@ function getFromTo(
 interface Props {
   resource: SnapshotResource | null;
   yaml: string;
+  isMobile?: boolean;
+  onBack?: () => void;
 }
 
-export default function ResourceDetail({ resource, yaml }: Props) {
+export default function ResourceDetail({ resource, yaml, isMobile, onBack }: Props) {
   const [tab, setTab] = useState<"yaml" | "history">("yaml");
   const [history, setHistory] = useState<ChangeEvent[]>([]);
   const [selectedSHAs, setSelectedSHAs] = useState<string[]>([]);
@@ -295,8 +297,26 @@ export default function ResourceDetail({ resource, yaml }: Props) {
           gap: 8,
           padding: "4px 0",
           borderBottom: "1px solid #ccc",
+          alignItems: "center",
         }}
       >
+        {onBack && (
+          <button
+            onClick={onBack}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              fontFamily: "monospace",
+              fontSize: 16,
+              padding: "2px 4px",
+              lineHeight: 1,
+              color: "#333",
+            }}
+          >
+            ←
+          </button>
+        )}
         <button
           onClick={() => setTab("yaml")}
           style={{
@@ -330,13 +350,22 @@ export default function ResourceDetail({ resource, yaml }: Props) {
       {tab === "yaml" && <YamlHighlight text={yaml} />}
 
       {tab === "history" && (
-        <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+        <div
+          style={{
+            display: "flex",
+            flex: 1,
+            overflow: "hidden",
+            flexDirection: isMobile ? "column" : "row",
+          }}
+        >
           <div
             style={{
-              width: 260,
-              borderRight: "1px solid #ccc",
+              width: isMobile ? "100%" : 260,
+              borderRight: isMobile ? undefined : "1px solid #ccc",
+              borderBottom: isMobile ? "1px solid #ccc" : undefined,
               overflowY: "auto",
               fontSize: 11,
+              ...(isMobile ? { maxHeight: "40%" } : {}),
             }}
           >
             {history.length === 0 && <div style={{ padding: 8, color: "#888" }}>no history</div>}

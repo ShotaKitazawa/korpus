@@ -3,9 +3,10 @@ import { api, type VolatilityEntry, type FieldVolatilityEntry } from "../api.ts"
 
 interface Props {
   onSelectResource: (group: string, kind: string) => void;
+  isMobile?: boolean;
 }
 
-export default function VolatilityView({ onSelectResource }: Props) {
+export default function VolatilityView({ onSelectResource, isMobile }: Props) {
   const [entries, setEntries] = useState<VolatilityEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [commits, setCommits] = useState(50);
@@ -62,16 +63,18 @@ export default function VolatilityView({ onSelectResource }: Props) {
       style={{
         display: "flex",
         flex: 1,
-        overflow: "hidden",
+        overflow: isMobile ? "auto" : "hidden",
+        flexDirection: isMobile ? "column" : "row",
         fontFamily: "monospace",
       }}
     >
       {/* left: volatility ranking */}
       <div
         style={{
-          width: "60%",
-          borderRight: "1px solid #ccc",
-          overflowY: "auto",
+          width: isMobile ? "100%" : "60%",
+          borderRight: isMobile ? undefined : "1px solid #ccc",
+          borderBottom: isMobile ? "1px solid #ccc" : undefined,
+          overflowY: isMobile ? undefined : "auto",
           padding: 16,
         }}
       >
@@ -81,6 +84,7 @@ export default function VolatilityView({ onSelectResource }: Props) {
             gap: 12,
             alignItems: "center",
             marginBottom: 12,
+            flexWrap: "wrap",
           }}
         >
           <label style={{ fontSize: 12, color: "#666" }}>
