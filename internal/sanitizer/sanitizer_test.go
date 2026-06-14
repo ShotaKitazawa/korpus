@@ -69,3 +69,48 @@ func TestDeleteFields_Multiple(t *testing.T) {
 	assert.NotContains(t, obj["metadata"].(map[string]interface{}), "resourceVersion")
 	assert.Equal(t, "test", obj["metadata"].(map[string]interface{})["name"])
 }
+
+func TestDeleteField_ArrayWildcard(t *testing.T) {
+	obj := map[string]interface{}{
+		"status": map[string]interface{}{
+			"conditions": []interface{}{
+				map[string]interface{}{
+					"type":               "Ready",
+					"lastHeartbeatTime":  "2024-01-01T00:00:00Z",
+					"lastTransitionTime": "2024-01-01T00:00:00Z",
+				},
+				map[string]interface{}{
+					"type":               "MemoryPressure",
+					"lastHeartbeatTime":  "2024-01-01T00:01:00Z",
+					"lastTransitionTime": "2024-01-01T00:00:00Z",
+				},
+			},
+		},
+	}
+	DeleteField(obj, "status.conditions[*].lastHeartbeatTime")
+	conditions := obj["status"].(map[string]interface{})["conditions"].([]interface{})
+	for _, c := range conditions {
+		cond := c.(map[string]interface{})
+		assert.NotContains(t, cond, "lastHeartbeatTime")
+		assert.Contains(t, cond, "lastTransitionTime")
+		assert.Contains(t, cond, "type")
+	}
+}
+
+func TestDeleteField_ArrayWildcard_NonMapElementSkipped(t *testing.T) {
+	obj := map[string]interface{}{
+		"items": []interface{}{"string-element", 42},
+	}
+	DeleteField(obj, "items[*].field") // must not panic
+	assert.Equal(t, []interface{}{"string-element", 42}, obj["items"])
+}
+
+func TestDeleteField_ArrayWildcard_NotASlice(t *testing.T) {
+	obj := map[string]interface{}{
+		"status": map[string]interface{}{
+			"conditions": "not-a-slice",
+		},
+	}
+	DeleteField(obj, "status.conditions[*].lastHeartbeatTime") // must not panic
+	assert.Equal(t, "not-a-slice", obj["status"].(map[string]interface{})["conditions"])
+}
