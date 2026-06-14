@@ -397,7 +397,8 @@ func buildMux(ctx context.Context, cfg *config.ServerConfig, states map[string]*
 		wkPath = protectedResourceWellKnownPath(cfg.Spec.OIDC.Audience)
 		baseURL := resourceBaseURL(cfg.Spec.OIDC.Audience)
 		// RFC 8414 §3 / OIDC Discovery 1.0: AS metadata document proxied from the upstream
-		// issuer with registration_endpoint rewritten to this server's /oauth2/register proxy.
+		// issuer with registration_endpoint rewritten to this server's /oauth2/register proxy
+		// and authorization_endpoint rewritten to this server's /oauth2/auth proxy.
 		// Served at both well-known paths because MCP clients (and RFC 8414 §3.1) try
 		// /.well-known/oauth-authorization-server first and fall back to openid-configuration.
 		mux.HandleFunc("GET /.well-known/openid-configuration",
@@ -409,6 +410,12 @@ func buildMux(ctx context.Context, cfg *config.ServerConfig, states map[string]*
 		// carries the correct aud claim for this resource server.
 		mux.HandleFunc("POST /oauth2/register",
 			oidcRegistrationProxyHandler(cfg.Spec.OIDC.Issuer, cfg.Spec.OIDC.Audience))
+		// Ory Hydra only sets aud in access tokens when the authorization request explicitly
+		// includes audience=<resource>. RFC 8707 resource indicators are not advertised in the
+		// discovery doc, so MCP clients' resource parameter is ignored. This proxy injects the
+		// audience parameter before redirecting to the upstream authorization endpoint.
+		mux.HandleFunc("GET /oauth2/auth",
+			oidcAuthProxyHandler(cfg.Spec.OIDC.Issuer, cfg.Spec.OIDC.Audience))
 	}
 	// RFC 9728 §3: protected resource metadata; advertised in WWW-Authenticate challenges
 	// so clients can discover which authorization server to use for this resource.
@@ -814,7 +821,8 @@ func mergeAudience(body []byte, audience string) []byte {
 }
 
 // oidcDiscoveryProxyHandler proxies the OIDC discovery document from issuer,
-// rewriting registration_endpoint to baseURL+"/oauth2/register".
+// rewriting registration_endpoint to baseURL+"/oauth2/register" and
+// authorization_endpoint to baseURL+"/oauth2/auth" (audience-injecting proxy).
 // The rewritten document is cached for 5 minutes.
 func oidcDiscoveryProxyHandler(issuer, baseURL string) http.HandlerFunc {
 	const ttl = 5 * time.Minute
@@ -845,6 +853,8 @@ func oidcDiscoveryProxyHandler(issuer, baseURL string) http.HandlerFunc {
 		}
 		regEndpoint, _ := json.Marshal(baseURL + "/oauth2/register")
 		doc["registration_endpoint"] = regEndpoint
+		authEndpoint, _ := json.Marshal(baseURL + "/oauth2/auth")
+		doc["authorization_endpoint"] = authEndpoint
 		if body, err = json.Marshal(doc); err != nil {
 			return nil, fmt.Errorf("marshal discovery: %w", err)
 		}
@@ -937,4 +947,71 @@ func oidcRegistrationProxyHandler(issuer, audience string) http.HandlerFunc {
 		w.WriteHeader(resp.StatusCode)
 		io.Copy(w, resp.Body) //nolint:errcheck
 	}
+}
+
+// oidcAuthProxyHandler proxies the OAuth2 authorization endpoint, injecting
+// audience=<audience> into the query before redirecting to the upstream AS.
+// Ory Hydra only sets the aud claim in access tokens when the authorization
+// request includes an explicit audience parameter; this proxy ensures it is
+// always present regardless of whether the MCP client sends resource (RFC 8707).
+func oidcAuthProxyHandler(issuer, audience string) http.HandlerFunc {
+	var (
+		mu       sync.Mutex
+		upstream string
+		fetched  bool
+	)
+
+	getUpstream := func() (string, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if fetched {
+			return upstream, nil
+		}
+		resp, err := http.Get(issuer + "/.well-known/openid-configuration") //nolint:noctx
+		if err != nil {
+			return "", fmt.Errorf("fetch discovery: %w", err)
+		}
+		defer resp.Body.Close()
+		var doc struct {
+			AuthorizationEndpoint string `json:"authorization_endpoint"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&doc); err != nil {
+			return "", fmt.Errorf("parse discovery: %w", err)
+		}
+		if doc.AuthorizationEndpoint == "" {
+			return "", fmt.Errorf("no authorization_endpoint in discovery")
+		}
+		upstream = doc.AuthorizationEndpoint
+		fetched = true
+		return upstream, nil
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		up, err := getUpstream()
+		if err != nil {
+			slog.Error("oidc auth upstream", "err", err)
+			http.Error(w, "upstream not available", http.StatusBadGateway)
+			return
+		}
+		upURL, err := url.Parse(up)
+		if err != nil {
+			http.Error(w, "bad gateway", http.StatusBadGateway)
+			return
+		}
+		q := r.URL.Query()
+		if !stringInSlice(q["audience"], audience) {
+			q.Add("audience", audience)
+		}
+		upURL.RawQuery = q.Encode()
+		http.Redirect(w, r, upURL.String(), http.StatusFound)
+	}
+}
+
+func stringInSlice(vals []string, target string) bool {
+	for _, v := range vals {
+		if v == target {
+			return true
+		}
+	}
+	return false
 }
