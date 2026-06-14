@@ -396,11 +396,22 @@ func buildMux(ctx context.Context, cfg *config.ServerConfig, states map[string]*
 	if cfg.Spec.OIDC != nil {
 		wkPath = protectedResourceWellKnownPath(cfg.Spec.OIDC.Audience)
 		baseURL := resourceBaseURL(cfg.Spec.OIDC.Audience)
+		// RFC 8414 §3 / OIDC Discovery 1.0: AS metadata document proxied from the upstream
+		// issuer with registration_endpoint rewritten to this server's /oauth2/register proxy.
+		// Served at both well-known paths because MCP clients (and RFC 8414 §3.1) try
+		// /.well-known/oauth-authorization-server first and fall back to openid-configuration.
 		mux.HandleFunc("GET /.well-known/openid-configuration",
 			oidcDiscoveryProxyHandler(cfg.Spec.OIDC.Issuer, baseURL))
+		mux.HandleFunc("GET /.well-known/oauth-authorization-server",
+			oidcDiscoveryProxyHandler(cfg.Spec.OIDC.Issuer, baseURL))
+		// RFC 7591 DCR proxy: injects the configured audience into the registration request
+		// before forwarding to the upstream registration_endpoint, so the issued client token
+		// carries the correct aud claim for this resource server.
 		mux.HandleFunc("POST /oauth2/register",
 			oidcRegistrationProxyHandler(cfg.Spec.OIDC.Issuer, cfg.Spec.OIDC.Audience))
 	}
+	// RFC 9728 §3: protected resource metadata; advertised in WWW-Authenticate challenges
+	// so clients can discover which authorization server to use for this resource.
 	mux.HandleFunc(wkPath, oauthProtectedResourceHandler(cfg))
 	mux.HandleFunc("/auth-config", authConfigHandler(cfg))
 
