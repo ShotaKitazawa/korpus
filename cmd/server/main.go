@@ -252,7 +252,11 @@ func main() {
 		}
 	}
 
-	// Start one pull goroutine per cluster.
+	// Start one pull goroutine per cluster. initWg is released after the
+	// first clone+index build so the HTTP server only starts once all
+	// clusters are ready (or have failed their initial setup).
+	var initWg sync.WaitGroup
+	initWg.Add(len(cfg.Spec.Clusters))
 	for _, clusterCfg := range cfg.Spec.Clusters {
 		c := clusterCfg
 		state := states[c.Name]
@@ -261,6 +265,7 @@ func main() {
 			workDir, err := os.MkdirTemp("", "korpus-server-"+c.Name+"-*")
 			if err != nil {
 				logger.Error("create work dir", "cluster", c.Name, "err", err)
+				initWg.Done()
 				return
 			}
 			defer os.RemoveAll(workDir)
@@ -270,6 +275,7 @@ func main() {
 			gc, err := gitclient.Clone(ctx, c.Git.Repo, c.Git.Branch, c.Git.Token, c.Git.TokenFile, workDir, 0)
 			if err != nil {
 				logger.Error("git clone", "cluster", c.Name, "err", err)
+				initWg.Done()
 				return
 			}
 			logger.Info("git clone done", "cluster", c.Name, "elapsed", time.Since(t0).Round(time.Millisecond))
@@ -283,6 +289,7 @@ func main() {
 				logger.Info("initialization done", "cluster", c.Name, "totalElapsed", time.Since(tStart).Round(time.Millisecond))
 				state.recordPull(nil)
 			}
+			initWg.Done()
 
 			ticker := time.NewTicker(cfg.Spec.PullIntervalDuration())
 			defer ticker.Stop()
@@ -328,6 +335,8 @@ func main() {
 			}
 		}()
 	}
+
+	initWg.Wait()
 
 	var oidcMiddleware *oidcmw.Middleware
 	if cfg.Spec.OIDC != nil {
