@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, type VolatilityEntry, type FieldVolatilityEntry } from "../api.ts";
 
 interface Props {
-  onSelectResource: (group: string, kind: string) => void;
+  onSelectResource: (entry: VolatilityEntry) => void;
   isMobile?: boolean;
 }
 
@@ -206,7 +206,7 @@ export default function VolatilityView({ onSelectResource, isMobile }: Props) {
                       <button
                         onClick={(ev) => {
                           ev.stopPropagation();
-                          onSelectResource(e.group, e.kind);
+                          onSelectResource(e);
                         }}
                         title={`view resources of kind ${e.kind}`}
                         style={{

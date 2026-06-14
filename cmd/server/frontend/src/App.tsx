@@ -399,12 +399,21 @@ export default function App() {
         {view === "volatility" ? (
           <VolatilityView
             isMobile={isMobile}
-            onSelectResource={(group, kind) => {
-              setSelectedGroup(group);
+            onSelectResource={(e) => {
+              setSelectedCluster(e.cluster);
+              setSelectedGroup(e.group);
               setSelectedVersion("");
-              setSelectedKind(kind);
+              setSelectedKind(e.kind);
+              setSelectedNamespace(e.namespace);
               setOffset(0);
               setSelected(null);
+              pendingSelect.current = {
+                cluster: e.cluster,
+                group: e.group,
+                kind: e.kind,
+                namespace: e.namespace,
+                name: e.name,
+              };
               setView("resources");
             }}
           />
