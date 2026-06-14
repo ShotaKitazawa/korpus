@@ -33,7 +33,17 @@ function readIntParam(key: string, fallback: number): number {
   return isNaN(n) ? fallback : n;
 }
 
-function syncUrl(state: {
+function readFloatParam(key: string, fallback: number): number {
+  const v = new URLSearchParams(window.location.search).get(key);
+  const n = v ? parseFloat(v) : NaN;
+  return isNaN(n) ? fallback : n;
+}
+
+function isVolatilityPath(): boolean {
+  return window.location.pathname === "/volatility";
+}
+
+function syncResourcesUrl(state: {
   cluster: string;
   group: string;
   version: string;
@@ -42,7 +52,6 @@ function syncUrl(state: {
   q: string;
   offset: number;
   selected: SnapshotResource | null;
-  view: string;
 }) {
   const params = new URLSearchParams();
   if (state.cluster) params.set("cluster", state.cluster);
@@ -52,7 +61,6 @@ function syncUrl(state: {
   if (state.kind) params.set("kind", state.kind);
   if (state.q) params.set("q", state.q);
   if (state.offset > 0) params.set("offset", String(state.offset));
-  if (state.view && state.view !== "resources") params.set("view", state.view);
   if (state.selected) {
     params.set("selCluster", state.selected.cluster);
     params.set("selGroup", state.selected.group);
@@ -60,19 +68,27 @@ function syncUrl(state: {
     params.set("selNamespace", state.selected.namespace);
     params.set("selName", state.selected.name);
   }
-  const search = params.toString() ? "?" + params.toString() : window.location.pathname;
-  const cur = new URLSearchParams(window.location.search);
-  const navChanged =
-    (cur.get("cluster") ?? "") !== state.cluster ||
-    (cur.get("group") ?? "") !== state.group ||
-    (cur.get("namespace") ?? "") !== state.namespace ||
-    (cur.get("kind") ?? "") !== state.kind ||
-    (cur.get("view") ?? "") !== (state.view !== "resources" ? state.view : "");
-  if (navChanged) {
-    history.pushState(null, "", search);
-  } else {
-    history.replaceState(null, "", search);
-  }
+  const search = params.toString() ? "?" + params.toString() : "";
+  history.replaceState(null, "", "/" + search);
+}
+
+function syncVolatilityUrl(state: {
+  cluster: string;
+  group: string;
+  namespace: string;
+  kind: string;
+  commits: number;
+  threshold: number;
+}) {
+  const params = new URLSearchParams();
+  if (state.cluster) params.set("cluster", state.cluster);
+  if (state.group) params.set("group", state.group);
+  if (state.namespace) params.set("namespace", state.namespace);
+  if (state.kind) params.set("kind", state.kind);
+  if (state.commits !== 50) params.set("commits", String(state.commits));
+  if (state.threshold !== 0.5) params.set("threshold", String(state.threshold));
+  const search = params.toString() ? "?" + params.toString() : "";
+  history.replaceState(null, "", "/volatility" + search);
 }
 
 export default function App() {
@@ -90,9 +106,10 @@ export default function App() {
   const [selected, setSelected] = useState<SnapshotResource | null>(null);
   const [detail, setDetail] = useState("");
   const [searchQuery, setSearchQuery] = useState(() => readParam("q"));
-  const [view, setView] = useState<"resources" | "volatility">(() =>
-    readParam("view") === "volatility" ? "volatility" : "resources",
-  );
+  const [isVolatility, setIsVolatility] = useState(() => isVolatilityPath());
+  const [commits, setCommits] = useState(() => readIntParam("commits", 50));
+  const [threshold, setThreshold] = useState(() => readFloatParam("threshold", 0.5));
+  const [volatilityRefreshKey, setVolatilityRefreshKey] = useState(0);
   const isMobile = useIsMobile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -106,6 +123,7 @@ export default function App() {
 
   useEffect(() => {
     const onPopState = () => {
+      setIsVolatility(isVolatilityPath());
       setSelectedCluster(readParam("cluster"));
       setSelectedGroup(readParam("group"));
       setSelectedVersion(readParam("version"));
@@ -113,7 +131,8 @@ export default function App() {
       setSelectedKind(readParam("kind"));
       setSearchQuery(readParam("q"));
       setOffset(readIntParam("offset", 0));
-      setView(readParam("view") === "volatility" ? "volatility" : "resources");
+      setCommits(readIntParam("commits", 50));
+      setThreshold(readFloatParam("threshold", 0.5));
       setSelected(null);
       const name = readParam("selName");
       if (name) {
@@ -257,18 +276,29 @@ export default function App() {
   }, [selected]);
 
   useEffect(() => {
-    syncUrl({
-      cluster: selectedCluster,
-      group: selectedGroup,
-      version: selectedVersion,
-      namespace: selectedNamespace,
-      kind: selectedKind,
-      q: searchQuery,
-      offset,
-      selected,
-      view,
-    });
+    if (isVolatility) {
+      syncVolatilityUrl({
+        cluster: selectedCluster,
+        group: selectedGroup,
+        namespace: selectedNamespace,
+        kind: selectedKind,
+        commits,
+        threshold,
+      });
+    } else {
+      syncResourcesUrl({
+        cluster: selectedCluster,
+        group: selectedGroup,
+        version: selectedVersion,
+        namespace: selectedNamespace,
+        kind: selectedKind,
+        q: searchQuery,
+        offset,
+        selected,
+      });
+    }
   }, [
+    isVolatility,
     selectedCluster,
     selectedGroup,
     selectedVersion,
@@ -277,7 +307,8 @@ export default function App() {
     searchQuery,
     offset,
     selected,
-    view,
+    commits,
+    threshold,
   ]);
 
   const resetFilters = () => {
@@ -303,6 +334,37 @@ export default function App() {
     setOffset(0);
     setSelected(null);
     if (isMobile) setSidebarOpen(false);
+  };
+
+  const navigateToVolatility = () => {
+    const params = new URLSearchParams();
+    if (selectedCluster) params.set("cluster", selectedCluster);
+    if (selectedGroup) params.set("group", selectedGroup);
+    if (selectedNamespace) params.set("namespace", selectedNamespace);
+    if (selectedKind) params.set("kind", selectedKind);
+    const search = params.toString() ? "?" + params.toString() : "";
+    history.pushState(null, "", "/volatility" + search);
+    setIsVolatility(true);
+  };
+
+  const navigateToResources = () => {
+    const params = new URLSearchParams();
+    if (selectedCluster) params.set("cluster", selectedCluster);
+    if (selectedGroup) params.set("group", selectedGroup);
+    if (selectedNamespace) params.set("namespace", selectedNamespace);
+    if (selectedKind) params.set("kind", selectedKind);
+    const search = params.toString() ? "?" + params.toString() : "";
+    history.pushState(null, "", "/" + search);
+    setIsVolatility(false);
+  };
+
+  const btnBase: React.CSSProperties = {
+    fontFamily: "monospace",
+    fontSize: 12,
+    cursor: "pointer",
+    padding: "2px 10px",
+    border: "1px solid #ccc",
+    borderRadius: 2,
   };
 
   return (
@@ -369,77 +431,140 @@ export default function App() {
       )}
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        <div
-          style={{
-            padding: 8,
-            borderBottom: "1px solid #ccc",
-            display: "flex",
-            gap: 8,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          {isMobile && (
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              style={{
-                fontFamily: "monospace",
-                fontSize: 16,
-                cursor: "pointer",
-                padding: "2px 8px",
-                background: "none",
-                border: "1px solid #ccc",
-                borderRadius: 2,
-                lineHeight: 1.4,
-              }}
-            >
-              ☰
-            </button>
-          )}
-          <KindSelect
-            gvks={gvks}
-            value={selectedKind ? `${selectedGroup}/${selectedVersion}/${selectedKind}` : ""}
-            onChange={(info) => {
-              setSelectedGroup(info?.group ?? "");
-              setSelectedVersion(info?.version ?? "");
-              setSelectedKind(info?.kind ?? "");
-              setOffset(0);
-              resetFilters();
-            }}
-          />
-          <SearchBar
-            query={searchQuery}
-            onChange={(q) => {
-              setSearchQuery(q);
-              setOffset(0);
-              resetFilters();
-            }}
-          />
-          <button
-            onClick={() => setView(view === "volatility" ? "resources" : "volatility")}
+        {/* Header: Resources page */}
+        {!isVolatility && (
+          <div
             style={{
-              fontFamily: "monospace",
-              fontSize: 12,
-              cursor: "pointer",
-              padding: "2px 10px",
-              background: view === "volatility" ? "#333" : undefined,
-              color: view === "volatility" ? "#fff" : undefined,
-              border: "1px solid #ccc",
-              borderRadius: 2,
-              marginLeft: "auto",
+              padding: 8,
+              borderBottom: "1px solid #ccc",
+              display: "flex",
+              gap: 8,
+              alignItems: "center",
+              flexWrap: "wrap",
             }}
           >
-            Volatility
-          </button>
-        </div>
+            {isMobile && (
+              <button
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                style={{
+                  fontFamily: "monospace",
+                  fontSize: 16,
+                  cursor: "pointer",
+                  padding: "2px 8px",
+                  background: "none",
+                  border: "1px solid #ccc",
+                  borderRadius: 2,
+                  lineHeight: 1.4,
+                }}
+              >
+                ☰
+              </button>
+            )}
+            <KindSelect
+              gvks={gvks}
+              value={selectedKind ? `${selectedGroup}/${selectedVersion}/${selectedKind}` : ""}
+              onChange={(info) => {
+                setSelectedGroup(info?.group ?? "");
+                setSelectedVersion(info?.version ?? "");
+                setSelectedKind(info?.kind ?? "");
+                setOffset(0);
+                resetFilters();
+              }}
+            />
+            <SearchBar
+              query={searchQuery}
+              onChange={(q) => {
+                setSearchQuery(q);
+                setOffset(0);
+                resetFilters();
+              }}
+            />
+            <button onClick={navigateToVolatility} style={{ ...btnBase, marginLeft: "auto" }}>
+              Volatility
+            </button>
+          </div>
+        )}
 
-        {view === "volatility" ? (
+        {/* Header: Volatility page */}
+        {isVolatility && (
+          <div
+            style={{
+              padding: 8,
+              borderBottom: "1px solid #ccc",
+              display: "flex",
+              gap: 8,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            {isMobile && (
+              <button
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                style={{
+                  fontFamily: "monospace",
+                  fontSize: 16,
+                  cursor: "pointer",
+                  padding: "2px 8px",
+                  background: "none",
+                  border: "1px solid #ccc",
+                  borderRadius: 2,
+                  lineHeight: 1.4,
+                }}
+              >
+                ☰
+              </button>
+            )}
+            <KindSelect
+              gvks={gvks}
+              value={selectedKind ? `${selectedGroup}/${selectedVersion}/${selectedKind}` : ""}
+              onChange={(info) => {
+                setSelectedGroup(info?.group ?? "");
+                setSelectedVersion(info?.version ?? "");
+                setSelectedKind(info?.kind ?? "");
+              }}
+            />
+            <label style={{ fontSize: 12, color: "#666" }}>
+              commits:
+              <input
+                type="number"
+                value={commits}
+                min={1}
+                max={500}
+                onChange={(e) => setCommits(Number(e.target.value))}
+                style={{ marginLeft: 4, width: 60, fontFamily: "monospace", fontSize: 12 }}
+              />
+            </label>
+            <label style={{ fontSize: 12, color: "#666" }}>
+              threshold:
+              <input
+                type="number"
+                value={threshold}
+                min={0}
+                max={1}
+                step={0.1}
+                onChange={(e) => setThreshold(Number(e.target.value))}
+                style={{ marginLeft: 4, width: 50, fontFamily: "monospace", fontSize: 12 }}
+              />
+            </label>
+            <button onClick={() => setVolatilityRefreshKey((k) => k + 1)} style={btnBase}>
+              Refresh
+            </button>
+            <button onClick={navigateToResources} style={{ ...btnBase, marginLeft: "auto" }}>
+              ← Resources
+            </button>
+          </div>
+        )}
+
+        {isVolatility ? (
           <VolatilityView
             isMobile={isMobile}
             cluster={selectedCluster || undefined}
             group={selectedGroup || undefined}
             kind={selectedKind || undefined}
             namespace={selectedNamespace || undefined}
+            commits={commits}
+            threshold={threshold}
+            refreshKey={volatilityRefreshKey}
             onSelectResource={(e) => {
               setSelectedCluster(e.cluster);
               setSelectedGroup(e.group);
@@ -455,7 +580,7 @@ export default function App() {
                 namespace: e.namespace,
                 name: e.name,
               };
-              setView("resources");
+              navigateToResources();
             }}
           />
         ) : (
