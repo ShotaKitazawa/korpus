@@ -4,33 +4,53 @@ import { api, type VolatilityEntry, type FieldVolatilityEntry } from "../api.ts"
 interface Props {
   onSelectResource: (entry: VolatilityEntry) => void;
   isMobile?: boolean;
+  cluster?: string;
+  group?: string;
+  kind?: string;
+  namespace?: string;
+  commits: number;
+  threshold: number;
+  refreshKey: number;
 }
 
-export default function VolatilityView({ onSelectResource, isMobile }: Props) {
+export default function VolatilityView({
+  onSelectResource,
+  isMobile,
+  cluster,
+  group,
+  kind,
+  namespace,
+  commits,
+  threshold,
+  refreshKey,
+}: Props) {
   const [entries, setEntries] = useState<VolatilityEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [commits, setCommits] = useState(50);
-  const [threshold, setThreshold] = useState(0.5);
   const [selectedEntry, setSelectedEntry] = useState<VolatilityEntry | null>(null);
   const [fieldEntries, setFieldEntries] = useState<FieldVolatilityEntry[]>([]);
   const [fieldLoading, setFieldLoading] = useState(false);
 
-  const load = () => {
+  useEffect(() => {
     setLoading(true);
     api
       .GET("/api/volatility", {
-        params: { query: { commits, threshold } },
+        params: {
+          query: {
+            commits,
+            threshold,
+            cluster: cluster || undefined,
+            group: group || undefined,
+            kind: kind || undefined,
+            namespace: namespace || undefined,
+          },
+        },
       })
       .then(({ data }) => {
         setEntries(data?.items ?? []);
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    load();
-  }, []);
+  }, [cluster, group, kind, namespace, commits, threshold, refreshKey]);
 
   useEffect(() => {
     if (!selectedEntry) {
@@ -78,61 +98,7 @@ export default function VolatilityView({ onSelectResource, isMobile }: Props) {
           padding: 16,
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            gap: 12,
-            alignItems: "center",
-            marginBottom: 12,
-            flexWrap: "wrap",
-          }}
-        >
-          <label style={{ fontSize: 12, color: "#666" }}>
-            lookback commits:
-            <input
-              type="number"
-              value={commits}
-              min={1}
-              max={500}
-              onChange={(e) => setCommits(Number(e.target.value))}
-              style={{
-                marginLeft: 4,
-                width: 60,
-                fontFamily: "monospace",
-                fontSize: 12,
-              }}
-            />
-          </label>
-          <label style={{ fontSize: 12, color: "#666" }}>
-            threshold:
-            <input
-              type="number"
-              value={threshold}
-              min={0}
-              max={1}
-              step={0.1}
-              onChange={(e) => setThreshold(Number(e.target.value))}
-              style={{
-                marginLeft: 4,
-                width: 50,
-                fontFamily: "monospace",
-                fontSize: 12,
-              }}
-            />
-          </label>
-          <button
-            onClick={load}
-            style={{
-              fontFamily: "monospace",
-              fontSize: 12,
-              cursor: "pointer",
-              padding: "2px 10px",
-            }}
-          >
-            Refresh
-          </button>
-          {loading && <span style={{ fontSize: 12, color: "#888" }}>loading…</span>}
-        </div>
+        {loading && <span style={{ fontSize: 12, color: "#888" }}>loading…</span>}
 
         {!loading && entries.length === 0 && (
           <div style={{ color: "#888", fontSize: 13 }}>
