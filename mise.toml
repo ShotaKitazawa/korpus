@@ -68,11 +68,10 @@ run = "go build ./..."
 
 [tasks.ci-install-frontend]
 run = """
-if [[ "${GITHUB_REF:-}" == refs/heads/renovate/* ]]; then
-  pnpm install
-else
-  pnpm install --frozen-lockfile
-fi
+case "${GITHUB_REF:-}" in
+  refs/heads/renovate/*) pnpm install --no-frozen-lockfile ;;
+  *) pnpm install --frozen-lockfile ;;
+esac
 """
 dir = "{{config_root}}/cmd/server/frontend"
 
