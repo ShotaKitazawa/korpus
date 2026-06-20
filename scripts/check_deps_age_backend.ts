@@ -152,6 +152,13 @@ if (process.env.NODE_TEST_CONTEXT) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 if (!process.env.NODE_TEST_CONTEXT) {
+  // Renovate branches are already gated by minimumReleaseAge in renovate.json
+  // and the renovate/stability-days status check. Skip the redundant CI check.
+  if ((process.env.GITHUB_REF ?? '').startsWith('refs/heads/renovate/')) {
+    console.log('Skipping deps age check: Renovate branch (enforced by renovate/stability-days)');
+    process.exit(0);
+  }
+
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   const cacheFile = resolve(root, '.deps_age_cache');
 
