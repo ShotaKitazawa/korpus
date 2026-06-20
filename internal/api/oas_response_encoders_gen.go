@@ -17,7 +17,6 @@ func encodeGetDiffResponse(response GetDiffRes, w http.ResponseWriter, span trac
 	case *DiffResult:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(200)
-		span.SetStatus(codes.Ok, http.StatusText(200))
 
 		e := new(jx.Encoder)
 		response.Encode(e)
@@ -29,13 +28,11 @@ func encodeGetDiffResponse(response GetDiffRes, w http.ResponseWriter, span trac
 
 	case *GetDiffBadRequest:
 		w.WriteHeader(400)
-		span.SetStatus(codes.Error, http.StatusText(400))
 
 		return nil
 
 	case *GetDiffNotFound:
 		w.WriteHeader(404)
-		span.SetStatus(codes.Error, http.StatusText(404))
 
 		return nil
 
@@ -47,7 +44,6 @@ func encodeGetDiffResponse(response GetDiffRes, w http.ResponseWriter, span trac
 func encodeGetHistoryResponse(response *HistoryPage, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
-	span.SetStatus(codes.Ok, http.StatusText(200))
 
 	e := new(jx.Encoder)
 	response.Encode(e)
@@ -63,7 +59,6 @@ func encodeGetResourceResponse(response GetResourceRes, w http.ResponseWriter, s
 	case *GetResourceOK:
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(200)
-		span.SetStatus(codes.Ok, http.StatusText(200))
 
 		writer := w
 		if closer, ok := response.Data.(io.Closer); ok {
@@ -77,7 +72,6 @@ func encodeGetResourceResponse(response GetResourceRes, w http.ResponseWriter, s
 
 	case *GetResourceNotFound:
 		w.WriteHeader(404)
-		span.SetStatus(codes.Error, http.StatusText(404))
 
 		return nil
 
@@ -91,7 +85,6 @@ func encodeGetSnapshotResponse(response GetSnapshotRes, w http.ResponseWriter, s
 	case *SnapshotPage:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(200)
-		span.SetStatus(codes.Ok, http.StatusText(200))
 
 		e := new(jx.Encoder)
 		response.Encode(e)
@@ -103,7 +96,6 @@ func encodeGetSnapshotResponse(response GetSnapshotRes, w http.ResponseWriter, s
 
 	case *GetSnapshotBadRequest:
 		w.WriteHeader(400)
-		span.SetStatus(codes.Error, http.StatusText(400))
 
 		return nil
 
@@ -115,7 +107,6 @@ func encodeGetSnapshotResponse(response GetSnapshotRes, w http.ResponseWriter, s
 func encodeGetStatusResponse(response *StatusResponse, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
-	span.SetStatus(codes.Ok, http.StatusText(200))
 
 	e := new(jx.Encoder)
 	response.Encode(e)
@@ -129,7 +120,6 @@ func encodeGetStatusResponse(response *StatusResponse, w http.ResponseWriter, sp
 func encodeGetVolatilityResponse(response *VolatilityPage, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
-	span.SetStatus(codes.Ok, http.StatusText(200))
 
 	e := new(jx.Encoder)
 	response.Encode(e)
@@ -145,7 +135,6 @@ func encodeGetVolatilityFieldsResponse(response GetVolatilityFieldsRes, w http.R
 	case *GetVolatilityFieldsOKApplicationJSON:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(200)
-		span.SetStatus(codes.Ok, http.StatusText(200))
 
 		e := new(jx.Encoder)
 		response.Encode(e)
@@ -157,7 +146,6 @@ func encodeGetVolatilityFieldsResponse(response GetVolatilityFieldsRes, w http.R
 
 	case *GetVolatilityFieldsBadRequest:
 		w.WriteHeader(400)
-		span.SetStatus(codes.Error, http.StatusText(400))
 
 		return nil
 
@@ -170,7 +158,6 @@ func encodeHealthzResponse(response HealthzRes, w http.ResponseWriter, span trac
 	switch response := response.(type) {
 	case *HealthzOK:
 		w.WriteHeader(200)
-		span.SetStatus(codes.Ok, http.StatusText(200))
 
 		return nil
 
@@ -188,7 +175,6 @@ func encodeHealthzResponse(response HealthzRes, w http.ResponseWriter, span trac
 func encodeListClustersResponse(response []string, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
-	span.SetStatus(codes.Ok, http.StatusText(200))
 
 	e := new(jx.Encoder)
 	e.ArrStart()
@@ -206,7 +192,6 @@ func encodeListClustersResponse(response []string, w http.ResponseWriter, span t
 func encodeListGVKsResponse(response []GVKInfo, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
-	span.SetStatus(codes.Ok, http.StatusText(200))
 
 	e := new(jx.Encoder)
 	e.ArrStart()
@@ -224,7 +209,6 @@ func encodeListGVKsResponse(response []GVKInfo, w http.ResponseWriter, span trac
 func encodeListNamespacesResponse(response []string, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
-	span.SetStatus(codes.Ok, http.StatusText(200))
 
 	e := new(jx.Encoder)
 	e.ArrStart()
