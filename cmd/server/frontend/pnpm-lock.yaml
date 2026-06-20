@@ -37,7 +37,7 @@ importers:
         specifier: ^7.13.0
         version: 7.13.0(typescript@6.0.3)
       oxfmt:
-        specifier: ^0.54.0
+        specifier: ^0.55.0
         version: 0.54.0
       oxlint:
         specifier: ^1.0.0
