@@ -67,7 +67,13 @@ depends = ["ci-build-frontend"]
 run = "go build ./..."
 
 [tasks.ci-install-frontend]
-run = "pnpm install --frozen-lockfile"
+run = """
+if [[ "${GITHUB_REF:-}" == refs/heads/renovate/* ]]; then
+  pnpm install
+else
+  pnpm install --frozen-lockfile
+fi
+"""
 dir = "{{config_root}}/cmd/server/frontend"
 
 [tasks.ci-deps-frontend]
