@@ -32,7 +32,7 @@ Key tasks:
 
 ### korpus (backup daemon)
 - **dynamic client + API discovery only** — no typed `clientset`. K8s-version-independent.
-- `excludeFields` in config **completely replaces** `defaultExcludeFields` for that resource (not merged).
+- `backup.rules[]` is the single place for all exclusion config. `resource: "*"` applies to all resources. `excludeFields` is always additive (all matching rules are unioned). See `docs/configuration.md`.
 - Built-in exclude list is in `internal/defaults/excludes.go`.
 - Churn analysis (`internal/churn`) uses `exec.Command("git", ...)` — not go-git's log API.
 
