@@ -20,13 +20,14 @@ spec:
       name: bot
       email: bot@example.com
   backup:
-    defaultExcludeFields:
-      - metadata.resourceVersion
-      - status
-    resources:
-      - match: ciliumidentities.cilium.io
+    rules:
+      - resource: "*"
+        excludeFields:
+          - metadata.resourceVersion
+          - status
+      - resource: ciliumidentities.cilium.io
         exclude: true
-      - match: nodes
+      - resource: nodes
         excludeFields:
           - metadata.resourceVersion
 `
@@ -63,7 +64,9 @@ func TestLoadKorpus(t *testing.T) {
 	assert.Equal(t, "https://github.com/example/backup", cfg.Spec.Git.Repo)
 	assert.Equal(t, "main", cfg.Spec.Git.Branch)
 	assert.Equal(t, "bot", cfg.Spec.Git.Author.Name)
-	assert.Equal(t, []string{"metadata.resourceVersion", "status"}, cfg.Spec.Backup.DefaultExcludeFields)
+	require.Len(t, cfg.Spec.Backup.Rules, 3)
+	assert.Equal(t, "*", cfg.Spec.Backup.Rules[0].Resource)
+	assert.Equal(t, []string{"metadata.resourceVersion", "status"}, cfg.Spec.Backup.Rules[0].ExcludeFields)
 }
 
 func TestLoadKorpus_DefaultBranch(t *testing.T) {
@@ -183,8 +186,8 @@ func TestIsExcluded_UserConfigured(t *testing.T) {
 	cfg := &KorpusConfig{
 		Spec: KorpusSpec{
 			Backup: BackupConfig{
-				Resources: []ResourceConfig{
-					{Match: "ciliumidentities.cilium.io", Exclude: true},
+				Rules: []RuleConfig{
+					{Resource: "ciliumidentities.cilium.io", Exclude: true},
 				},
 			},
 		},
@@ -204,11 +207,78 @@ func TestIsExcluded_DisableBuiltin(t *testing.T) {
 	assert.False(t, IsExcluded(cfg, "secrets", ""))
 }
 
-func TestResolveExcludeFields_Default(t *testing.T) {
+// User rule with exclude: false overrides a builtin exclusion.
+func TestIsExcluded_UserOverridesBuiltin(t *testing.T) {
 	cfg := &KorpusConfig{
 		Spec: KorpusSpec{
 			Backup: BackupConfig{
-				DefaultExcludeFields: []string{"metadata.resourceVersion", "status"},
+				Rules: []RuleConfig{
+					{Resource: "secrets", Exclude: false},
+				},
+			},
+		},
+	}
+	assert.False(t, IsExcluded(cfg, "secrets", ""))
+}
+
+// resource: "*" rules are ignored by IsExcluded.
+func TestIsExcluded_WildcardIgnored(t *testing.T) {
+	cfg := &KorpusConfig{
+		Spec: KorpusSpec{
+			Backup: BackupConfig{
+				Rules: []RuleConfig{
+					{Resource: "*", Exclude: true},
+				},
+			},
+		},
+	}
+	// builtin secrets should still be excluded; wildcard does not trigger IsExcluded
+	assert.True(t, IsExcluded(cfg, "secrets", ""))
+	// non-builtin resource should NOT be excluded by the wildcard rule
+	assert.False(t, IsExcluded(cfg, "deployments", "apps"))
+}
+
+func TestIsObjectExcluded_ByName(t *testing.T) {
+	cfg := &KorpusConfig{
+		Spec: KorpusSpec{
+			Backup: BackupConfig{
+				Rules: []RuleConfig{
+					{Resource: "cronjobs.batch", Namespace: "kube-system", Name: "backup-manifests", Exclude: true},
+				},
+			},
+		},
+	}
+	assert.True(t, IsObjectExcluded(cfg, "cronjobs", "batch", "kube-system", "backup-manifests"))
+	assert.False(t, IsObjectExcluded(cfg, "cronjobs", "batch", "kube-system", "other-cron"))
+	assert.False(t, IsObjectExcluded(cfg, "cronjobs", "batch", "default", "backup-manifests"))
+}
+
+func TestIsObjectExcluded_NamespaceOnly(t *testing.T) {
+	cfg := &KorpusConfig{
+		Spec: KorpusSpec{
+			Backup: BackupConfig{
+				Rules: []RuleConfig{
+					{Resource: "pods", Namespace: "dev", Exclude: true},
+				},
+			},
+		},
+	}
+	assert.True(t, IsObjectExcluded(cfg, "pods", "", "dev", "any-pod"))
+	assert.False(t, IsObjectExcluded(cfg, "pods", "", "prod", "any-pod"))
+}
+
+func TestIsObjectExcluded_NoMatch(t *testing.T) {
+	cfg := &KorpusConfig{}
+	assert.False(t, IsObjectExcluded(cfg, "deployments", "apps", "default", "my-app"))
+}
+
+func TestResolveExcludeFields_WildcardOnly(t *testing.T) {
+	cfg := &KorpusConfig{
+		Spec: KorpusSpec{
+			Backup: BackupConfig{
+				Rules: []RuleConfig{
+					{Resource: "*", ExcludeFields: []string{"metadata.resourceVersion", "status"}},
+				},
 			},
 		},
 	}
@@ -216,30 +286,34 @@ func TestResolveExcludeFields_Default(t *testing.T) {
 		ResolveExcludeFields(cfg, "deployments", "apps"))
 }
 
-func TestResolveExcludeFields_Override(t *testing.T) {
+func TestResolveExcludeFields_WildcardAndSpecific(t *testing.T) {
 	cfg := &KorpusConfig{
 		Spec: KorpusSpec{
 			Backup: BackupConfig{
-				DefaultExcludeFields: []string{"metadata.resourceVersion", "status"},
-				Resources: []ResourceConfig{
-					{Match: "nodes", ExcludeFields: []string{"metadata.resourceVersion"}},
+				Rules: []RuleConfig{
+					{Resource: "*", ExcludeFields: []string{"metadata.resourceVersion", "status"}},
+					{Resource: "nodes", ExcludeFields: []string{"metadata.generation"}},
 				},
 			},
 		},
 	}
-	// nodes: overrides — status is NOT excluded, but builtin lastHeartbeatTime is still appended
-	assert.Equal(t, []string{"metadata.resourceVersion", "status.conditions[*].lastHeartbeatTime"},
-		ResolveExcludeFields(cfg, "nodes", ""))
-	// other resources still use defaults
+	// nodes gets wildcard + specific (union)
+	fields := ResolveExcludeFields(cfg, "nodes", "")
+	assert.Contains(t, fields, "metadata.resourceVersion")
+	assert.Contains(t, fields, "status")
+	assert.Contains(t, fields, "metadata.generation")
+	// deployments only get wildcard
 	assert.Equal(t, []string{"metadata.resourceVersion", "status"},
-		ResolveExcludeFields(cfg, "pods", ""))
+		ResolveExcludeFields(cfg, "deployments", "apps"))
 }
 
 func TestResolveExcludeFields_BuiltinAppended(t *testing.T) {
 	cfg := &KorpusConfig{
 		Spec: KorpusSpec{
 			Backup: BackupConfig{
-				DefaultExcludeFields: []string{"metadata.resourceVersion"},
+				Rules: []RuleConfig{
+					{Resource: "*", ExcludeFields: []string{"metadata.resourceVersion"}},
+				},
 			},
 		},
 	}
@@ -255,13 +329,32 @@ func TestResolveExcludeFields_BuiltinDisabled(t *testing.T) {
 	cfg := &KorpusConfig{
 		Spec: KorpusSpec{
 			Backup: BackupConfig{
-				DefaultExcludeFields:   []string{"metadata.resourceVersion"},
 				DisableBuiltinExcludes: true,
+				Rules: []RuleConfig{
+					{Resource: "*", ExcludeFields: []string{"metadata.resourceVersion"}},
+				},
 			},
 		},
 	}
 	fields := ResolveExcludeFields(cfg, "applications", "argoproj.io")
 	assert.NotContains(t, fields, "status.reconciledAt")
+}
+
+// Object-filter rules are excluded from field resolution.
+func TestResolveExcludeFields_ObjectFilterIgnored(t *testing.T) {
+	cfg := &KorpusConfig{
+		Spec: KorpusSpec{
+			Backup: BackupConfig{
+				Rules: []RuleConfig{
+					{Resource: "*", ExcludeFields: []string{"metadata.resourceVersion"}},
+					{Resource: "cronjobs.batch", Namespace: "kube-system", Name: "backup-manifests", Exclude: true},
+				},
+			},
+		},
+	}
+	// object-filter rule must not contribute excludeFields
+	assert.Equal(t, []string{"metadata.resourceVersion"},
+		ResolveExcludeFields(cfg, "cronjobs", "batch"))
 }
 
 func baseServerYAML() string {
