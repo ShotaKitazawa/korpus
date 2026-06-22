@@ -373,11 +373,11 @@ func TestResolveExcludeFields_ObjectFilterApplied(t *testing.T) {
 		},
 	}
 	fields := ResolveExcludeFieldsForObject(cfg, "cronjobs", "batch", "dns-system", "record-syncer")
-	assert.Contains(t, fields, "metadata.resourceVersion")     // from wildcard
-	assert.Contains(t, fields, "metadata.generation")          // from type-level
-	assert.Contains(t, fields, "status.active")                // from object-level
-	assert.Contains(t, fields, "status.lastScheduleTime")      // from object-level
-	assert.Contains(t, fields, "status.lastSuccessfulTime")    // from object-level
+	assert.Contains(t, fields, "metadata.resourceVersion")  // from wildcard
+	assert.Contains(t, fields, "metadata.generation")       // from type-level
+	assert.Contains(t, fields, "status.active")             // from object-level
+	assert.Contains(t, fields, "status.lastScheduleTime")   // from object-level
+	assert.Contains(t, fields, "status.lastSuccessfulTime") // from object-level
 
 	// other CronJobs do not get the object-level fields
 	other := ResolveExcludeFieldsForObject(cfg, "cronjobs", "batch", "kube-system", "backup-manifests")
