@@ -261,19 +261,27 @@ func IsObjectExcluded(cfg *KorpusConfig, resource, group, namespace, name string
 	return false
 }
 
-// ResolveExcludeFields returns the field paths to strip for a given resource.
-// All matching rules contribute additively: wildcard ("*") rules are unioned with
-// resource-specific rules. Built-in field exclusions are appended last unless
-// disableBuiltinExcludes is true.
-func ResolveExcludeFields(cfg *KorpusConfig, resource, group string) []string {
+// ResolveExcludeFieldsForObject returns the field paths to strip for a specific object.
+// All matching rules contribute additively in order:
+//  1. wildcard ("*") and resource-type rules (no object filter)
+//  2. object-level rules whose namespace/name match the given object
+//  3. built-in field exclusions (unless disableBuiltinExcludes is true)
+func ResolveExcludeFieldsForObject(cfg *KorpusConfig, resource, group, namespace, name string) []string {
 	key := resourceKey(resource, group)
 	var fields []string
 	for _, rc := range cfg.Spec.Backup.Rules {
 		if rc.hasObjectFilter() {
-			continue
-		}
-		if rc.Resource == "*" || rc.Resource == key || rc.Resource == resource {
-			fields = append(fields, rc.ExcludeFields...)
+			if rc.Resource != "*" && rc.Resource != key && rc.Resource != resource {
+				continue
+			}
+			if (rc.Namespace == "" || rc.Namespace == namespace) &&
+				(rc.Name == "" || rc.Name == name) {
+				fields = append(fields, rc.ExcludeFields...)
+			}
+		} else {
+			if rc.Resource == "*" || rc.Resource == key || rc.Resource == resource {
+				fields = append(fields, rc.ExcludeFields...)
+			}
 		}
 	}
 	if !cfg.Spec.Backup.DisableBuiltinExcludes {
