@@ -132,8 +132,6 @@ func (r *runner) runOnce(ctx context.Context) error {
 			continue
 		}
 
-		fields := config.ResolveExcludeFields(r.cfg, gvr.Resource, gvr.Group)
-
 		apiGroup := gvr.Group
 		if apiGroup == "" {
 			apiGroup = "core"
@@ -145,6 +143,8 @@ func (r *runner) runOnce(ctx context.Context) error {
 					"resource", gvr.Resource, "namespace", item.GetNamespace(), "name", item.GetName())
 				continue
 			}
+			fields := config.ResolveExcludeFieldsForObject(r.cfg, gvr.Resource, gvr.Group,
+				item.GetNamespace(), item.GetName())
 			sanitizer.DeleteFields(item.Object, fields)
 			name := item.GetName()
 			var path string

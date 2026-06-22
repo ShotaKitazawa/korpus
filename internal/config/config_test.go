@@ -283,7 +283,7 @@ func TestResolveExcludeFields_WildcardOnly(t *testing.T) {
 		},
 	}
 	assert.Equal(t, []string{"metadata.resourceVersion", "status"},
-		ResolveExcludeFields(cfg, "deployments", "apps"))
+		ResolveExcludeFieldsForObject(cfg, "deployments", "apps", "", ""))
 }
 
 func TestResolveExcludeFields_WildcardAndSpecific(t *testing.T) {
@@ -298,13 +298,13 @@ func TestResolveExcludeFields_WildcardAndSpecific(t *testing.T) {
 		},
 	}
 	// nodes gets wildcard + specific (union)
-	fields := ResolveExcludeFields(cfg, "nodes", "")
+	fields := ResolveExcludeFieldsForObject(cfg, "nodes", "", "", "")
 	assert.Contains(t, fields, "metadata.resourceVersion")
 	assert.Contains(t, fields, "status")
 	assert.Contains(t, fields, "metadata.generation")
 	// deployments only get wildcard
 	assert.Equal(t, []string{"metadata.resourceVersion", "status"},
-		ResolveExcludeFields(cfg, "deployments", "apps"))
+		ResolveExcludeFieldsForObject(cfg, "deployments", "apps", "", ""))
 }
 
 func TestResolveExcludeFields_BuiltinAppended(t *testing.T) {
@@ -318,11 +318,11 @@ func TestResolveExcludeFields_BuiltinAppended(t *testing.T) {
 		},
 	}
 	// applications.argoproj.io gets builtin status.reconciledAt appended
-	fields := ResolveExcludeFields(cfg, "applications", "argoproj.io")
+	fields := ResolveExcludeFieldsForObject(cfg, "applications", "argoproj.io", "", "")
 	assert.Contains(t, fields, "metadata.resourceVersion")
 	assert.Contains(t, fields, "status.reconciledAt")
 	// unrelated resources are unaffected
-	assert.NotContains(t, ResolveExcludeFields(cfg, "deployments", "apps"), "status.reconciledAt")
+	assert.NotContains(t, ResolveExcludeFieldsForObject(cfg, "deployments", "apps", "", ""), "status.reconciledAt")
 }
 
 func TestResolveExcludeFields_BuiltinDisabled(t *testing.T) {
@@ -336,25 +336,54 @@ func TestResolveExcludeFields_BuiltinDisabled(t *testing.T) {
 			},
 		},
 	}
-	fields := ResolveExcludeFields(cfg, "applications", "argoproj.io")
+	fields := ResolveExcludeFieldsForObject(cfg, "applications", "argoproj.io", "", "")
 	assert.NotContains(t, fields, "status.reconciledAt")
 }
 
-// Object-filter rules are excluded from field resolution.
-func TestResolveExcludeFields_ObjectFilterIgnored(t *testing.T) {
+// Object-filter rules only apply when namespace/name match; unmatched objects skip them.
+func TestResolveExcludeFields_ObjectFilterNotAppliedWithoutMatch(t *testing.T) {
 	cfg := &KorpusConfig{
 		Spec: KorpusSpec{
 			Backup: BackupConfig{
 				Rules: []RuleConfig{
 					{Resource: "*", ExcludeFields: []string{"metadata.resourceVersion"}},
-					{Resource: "cronjobs.batch", Namespace: "kube-system", Name: "backup-manifests", Exclude: true},
+					{Resource: "cronjobs.batch", Namespace: "kube-system", Name: "backup-manifests",
+						ExcludeFields: []string{"status.active"}},
 				},
 			},
 		},
 	}
-	// object-filter rule must not contribute excludeFields
+	// other-cron does not match the object-filter rule → only wildcard fields apply
 	assert.Equal(t, []string{"metadata.resourceVersion"},
-		ResolveExcludeFields(cfg, "cronjobs", "batch"))
+		ResolveExcludeFieldsForObject(cfg, "cronjobs", "batch", "kube-system", "other-cron"))
+}
+
+// Per-object excludeFields are unioned with wildcard and type-level fields.
+func TestResolveExcludeFields_ObjectFilterApplied(t *testing.T) {
+	cfg := &KorpusConfig{
+		Spec: KorpusSpec{
+			Backup: BackupConfig{
+				Rules: []RuleConfig{
+					{Resource: "*", ExcludeFields: []string{"metadata.resourceVersion"}},
+					{Resource: "cronjobs.batch", ExcludeFields: []string{"metadata.generation"}},
+					{Resource: "cronjobs.batch", Namespace: "dns-system", Name: "record-syncer",
+						ExcludeFields: []string{"status.active", "status.lastScheduleTime", "status.lastSuccessfulTime"}},
+				},
+			},
+		},
+	}
+	fields := ResolveExcludeFieldsForObject(cfg, "cronjobs", "batch", "dns-system", "record-syncer")
+	assert.Contains(t, fields, "metadata.resourceVersion")  // from wildcard
+	assert.Contains(t, fields, "metadata.generation")       // from type-level
+	assert.Contains(t, fields, "status.active")             // from object-level
+	assert.Contains(t, fields, "status.lastScheduleTime")   // from object-level
+	assert.Contains(t, fields, "status.lastSuccessfulTime") // from object-level
+
+	// other CronJobs do not get the object-level fields
+	other := ResolveExcludeFieldsForObject(cfg, "cronjobs", "batch", "kube-system", "backup-manifests")
+	assert.Contains(t, other, "metadata.resourceVersion")
+	assert.Contains(t, other, "metadata.generation")
+	assert.NotContains(t, other, "status.active")
 }
 
 func baseServerYAML() string {
