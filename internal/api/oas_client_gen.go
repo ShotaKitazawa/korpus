@@ -4,7 +4,6 @@ package api
 
 import (
 	"context"
-	"io"
 	"net/url"
 	"strings"
 	"time"
@@ -279,13 +278,7 @@ func (c *Client) sendGetDiff(ctx context.Context, params GetDiffParams) (res Get
 		return res, errors.Wrap(err, "do request")
 	}
 	body := resp.Body
-	defer func() {
-		// Drain the body to EOF before closing, so the underlying
-		// connection can be reused by the Transport regardless of the
-		// response status code. See https://github.com/ogen-go/ogen/issues/1670.
-		_, _ = io.Copy(io.Discard, body)
-		_ = body.Close()
-	}()
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeGetDiffResponse(resp)
@@ -531,13 +524,7 @@ func (c *Client) sendGetHistory(ctx context.Context, params GetHistoryParams) (r
 		return res, errors.Wrap(err, "do request")
 	}
 	body := resp.Body
-	defer func() {
-		// Drain the body to EOF before closing, so the underlying
-		// connection can be reused by the Transport regardless of the
-		// response status code. See https://github.com/ogen-go/ogen/issues/1670.
-		_, _ = io.Copy(io.Discard, body)
-		_ = body.Close()
-	}()
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeGetHistoryResponse(resp)
@@ -686,13 +673,7 @@ func (c *Client) sendGetResource(ctx context.Context, params GetResourceParams) 
 		return res, errors.Wrap(err, "do request")
 	}
 	body := resp.Body
-	defer func() {
-		// Drain the body to EOF before closing, so the underlying
-		// connection can be reused by the Transport regardless of the
-		// response status code. See https://github.com/ogen-go/ogen/issues/1670.
-		_, _ = io.Copy(io.Discard, body)
-		_ = body.Close()
-	}()
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeGetResourceResponse(resp)
@@ -921,13 +902,7 @@ func (c *Client) sendGetSnapshot(ctx context.Context, params GetSnapshotParams) 
 		return res, errors.Wrap(err, "do request")
 	}
 	body := resp.Body
-	defer func() {
-		// Drain the body to EOF before closing, so the underlying
-		// connection can be reused by the Transport regardless of the
-		// response status code. See https://github.com/ogen-go/ogen/issues/1670.
-		_, _ = io.Copy(io.Discard, body)
-		_ = body.Close()
-	}()
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeGetSnapshotResponse(resp)
@@ -999,13 +974,7 @@ func (c *Client) sendGetStatus(ctx context.Context) (res *StatusResponse, err er
 		return res, errors.Wrap(err, "do request")
 	}
 	body := resp.Body
-	defer func() {
-		// Drain the body to EOF before closing, so the underlying
-		// connection can be reused by the Transport regardless of the
-		// response status code. See https://github.com/ogen-go/ogen/issues/1670.
-		_, _ = io.Copy(io.Discard, body)
-		_ = body.Close()
-	}()
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeGetStatusResponse(resp)
@@ -1234,13 +1203,7 @@ func (c *Client) sendGetVolatility(ctx context.Context, params GetVolatilityPara
 		return res, errors.Wrap(err, "do request")
 	}
 	body := resp.Body
-	defer func() {
-		// Drain the body to EOF before closing, so the underlying
-		// connection can be reused by the Transport regardless of the
-		// response status code. See https://github.com/ogen-go/ogen/issues/1670.
-		_, _ = io.Copy(io.Discard, body)
-		_ = body.Close()
-	}()
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeGetVolatilityResponse(resp)
@@ -1412,13 +1375,7 @@ func (c *Client) sendGetVolatilityFields(ctx context.Context, params GetVolatili
 		return res, errors.Wrap(err, "do request")
 	}
 	body := resp.Body
-	defer func() {
-		// Drain the body to EOF before closing, so the underlying
-		// connection can be reused by the Transport regardless of the
-		// response status code. See https://github.com/ogen-go/ogen/issues/1670.
-		_, _ = io.Copy(io.Discard, body)
-		_ = body.Close()
-	}()
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeGetVolatilityFieldsResponse(resp)
@@ -1490,13 +1447,7 @@ func (c *Client) sendHealthz(ctx context.Context) (res HealthzRes, err error) {
 		return res, errors.Wrap(err, "do request")
 	}
 	body := resp.Body
-	defer func() {
-		// Drain the body to EOF before closing, so the underlying
-		// connection can be reused by the Transport regardless of the
-		// response status code. See https://github.com/ogen-go/ogen/issues/1670.
-		_, _ = io.Copy(io.Discard, body)
-		_ = body.Close()
-	}()
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeHealthzResponse(resp)
@@ -1568,13 +1519,7 @@ func (c *Client) sendListClusters(ctx context.Context) (res []string, err error)
 		return res, errors.Wrap(err, "do request")
 	}
 	body := resp.Body
-	defer func() {
-		// Drain the body to EOF before closing, so the underlying
-		// connection can be reused by the Transport regardless of the
-		// response status code. See https://github.com/ogen-go/ogen/issues/1670.
-		_, _ = io.Copy(io.Discard, body)
-		_ = body.Close()
-	}()
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeListClustersResponse(resp)
@@ -1684,13 +1629,7 @@ func (c *Client) sendListGVKs(ctx context.Context, params ListGVKsParams) (res [
 		return res, errors.Wrap(err, "do request")
 	}
 	body := resp.Body
-	defer func() {
-		// Drain the body to EOF before closing, so the underlying
-		// connection can be reused by the Transport regardless of the
-		// response status code. See https://github.com/ogen-go/ogen/issues/1670.
-		_, _ = io.Copy(io.Discard, body)
-		_ = body.Close()
-	}()
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeListGVKsResponse(resp)
@@ -1783,13 +1722,7 @@ func (c *Client) sendListNamespaces(ctx context.Context, params ListNamespacesPa
 		return res, errors.Wrap(err, "do request")
 	}
 	body := resp.Body
-	defer func() {
-		// Drain the body to EOF before closing, so the underlying
-		// connection can be reused by the Transport regardless of the
-		// response status code. See https://github.com/ogen-go/ogen/issues/1670.
-		_, _ = io.Copy(io.Discard, body)
-		_ = body.Close()
-	}()
+	defer body.Close()
 
 	stage = "DecodeResponse"
 	result, err := decodeListNamespacesResponse(resp)
