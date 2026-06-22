@@ -689,11 +689,6 @@ func (o *OptNilDateTime) SetToNull() {
 	o.Value = v
 }
 
-// IsEmpty returns true if the field was omitted from the payload (not Set and not Null).
-func (o OptNilDateTime) IsEmpty() bool {
-	return !o.Set && !o.Null
-}
-
 // Get returns value and boolean that denotes whether value was set.
 func (o OptNilDateTime) Get() (v time.Time, ok bool) {
 	if o.Null {
@@ -757,11 +752,6 @@ func (o *OptNilSnapshotResourceLabels) SetToNull() {
 	o.Value = v
 }
 
-// IsEmpty returns true if the field was omitted from the payload (not Set and not Null).
-func (o OptNilSnapshotResourceLabels) IsEmpty() bool {
-	return !o.Set && !o.Null
-}
-
 // Get returns value and boolean that denotes whether value was set.
 func (o OptNilSnapshotResourceLabels) Get() (v SnapshotResourceLabels, ok bool) {
 	if o.Null {
@@ -823,11 +813,6 @@ func (o *OptNilString) SetToNull() {
 	o.Null = true
 	var v string
 	o.Value = v
-}
-
-// IsEmpty returns true if the field was omitted from the payload (not Set and not Null).
-func (o OptNilString) IsEmpty() bool {
-	return !o.Set && !o.Null
 }
 
 // Get returns value and boolean that denotes whether value was set.

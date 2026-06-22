@@ -74,27 +74,16 @@ type AuthorConfig struct {
 }
 
 type BackupConfig struct {
-	Schedule               string       `yaml:"schedule"`
-	DisableBuiltinExcludes bool         `yaml:"disableBuiltinExcludes"`
-	Rules                  []RuleConfig `yaml:"rules"`
+	Schedule               string           `yaml:"schedule"`
+	DefaultExcludeFields   []string         `yaml:"defaultExcludeFields"`
+	DisableBuiltinExcludes bool             `yaml:"disableBuiltinExcludes"`
+	Resources              []ResourceConfig `yaml:"resources"`
 }
 
-// RuleConfig configures backup behaviour for a resource type or a specific object.
-//
-// resource: "resource.group", "resource" (core), or "*" (all resources).
-// namespace/name: when set, the rule applies only to matching objects.
-// excludeFields is additive — all matching rules (wildcard + specific) are unioned.
-// resource: "*" is only meaningful for excludeFields; it is ignored by IsExcluded.
-type RuleConfig struct {
-	Resource      string   `yaml:"resource"`
-	Namespace     string   `yaml:"namespace,omitempty"`
-	Name          string   `yaml:"name,omitempty"`
+type ResourceConfig struct {
+	Match         string   `yaml:"match"`
 	Exclude       bool     `yaml:"exclude"`
-	ExcludeFields []string `yaml:"excludeFields,omitempty"`
-}
-
-func (rc *RuleConfig) hasObjectFilter() bool {
-	return rc.Namespace != "" || rc.Name != ""
+	ExcludeFields []string `yaml:"excludeFields"`
 }
 
 type IndexConfig struct {
@@ -210,7 +199,7 @@ func LoadServer(path string) (*ServerConfig, error) {
 	return &cfg, nil
 }
 
-// resourceKey builds the lookup key in "resource.group" or "resource" form.
+// resourceKey builds the match key in "resource.group" or "resource" form.
 func resourceKey(resource, group string) string {
 	if group == "" {
 		return resource
@@ -218,20 +207,9 @@ func resourceKey(resource, group string) string {
 	return resource + "." + group
 }
 
-// IsExcluded reports whether a resource type should be skipped entirely.
-// User rules take precedence over built-in exclusions, so setting exclude: false
-// on a built-in resource re-enables backup for that resource type.
-// Rules with resource: "*" or an object filter (namespace/name) are ignored here.
+// IsExcluded reports whether a resource should be skipped entirely.
 func IsExcluded(cfg *KorpusConfig, resource, group string) bool {
 	key := resourceKey(resource, group)
-	for _, rc := range cfg.Spec.Backup.Rules {
-		if rc.Resource == "*" || rc.hasObjectFilter() {
-			continue
-		}
-		if rc.Resource == key || rc.Resource == resource {
-			return rc.Exclude
-		}
-	}
 	if !cfg.Spec.Backup.DisableBuiltinExcludes {
 		for _, r := range defaults.BuiltinExcludeResources {
 			if r == key || r == resource {
@@ -239,22 +217,8 @@ func IsExcluded(cfg *KorpusConfig, resource, group string) bool {
 			}
 		}
 	}
-	return false
-}
-
-// IsObjectExcluded reports whether a specific object should be skipped.
-// Called per-item after listing, complementing the GVR-level IsExcluded.
-func IsObjectExcluded(cfg *KorpusConfig, resource, group, namespace, name string) bool {
-	key := resourceKey(resource, group)
-	for _, rc := range cfg.Spec.Backup.Rules {
-		if !rc.hasObjectFilter() {
-			continue
-		}
-		if rc.Resource != "*" && rc.Resource != key && rc.Resource != resource {
-			continue
-		}
-		if (rc.Namespace == "" || rc.Namespace == namespace) &&
-			(rc.Name == "" || rc.Name == name) {
+	for _, rc := range cfg.Spec.Backup.Resources {
+		if rc.Match == key || rc.Match == resource {
 			return rc.Exclude
 		}
 	}
@@ -262,24 +226,29 @@ func IsObjectExcluded(cfg *KorpusConfig, resource, group, namespace, name string
 }
 
 // ResolveExcludeFields returns the field paths to strip for a given resource.
-// All matching rules contribute additively: wildcard ("*") rules are unioned with
-// resource-specific rules. Built-in field exclusions are appended last unless
+// A per-resource excludeFields completely replaces defaultExcludeFields.
+// Built-in field exclusions (BuiltinExcludeFields) are always appended unless
 // disableBuiltinExcludes is true.
 func ResolveExcludeFields(cfg *KorpusConfig, resource, group string) []string {
 	key := resourceKey(resource, group)
 	var fields []string
-	for _, rc := range cfg.Spec.Backup.Rules {
-		if rc.hasObjectFilter() {
-			continue
+	for _, rc := range cfg.Spec.Backup.Resources {
+		if rc.Match == key || rc.Match == resource {
+			if rc.ExcludeFields != nil {
+				fields = rc.ExcludeFields
+				break
+			}
 		}
-		if rc.Resource == "*" || rc.Resource == key || rc.Resource == resource {
-			fields = append(fields, rc.ExcludeFields...)
-		}
+	}
+	if fields == nil {
+		fields = cfg.Spec.Backup.DefaultExcludeFields
 	}
 	if !cfg.Spec.Backup.DisableBuiltinExcludes {
 		for k, builtinFields := range defaults.BuiltinExcludeFields {
 			if k == key || k == resource {
-				fields = append(fields, builtinFields...)
+				merged := make([]string, len(fields), len(fields)+len(builtinFields))
+				copy(merged, fields)
+				fields = append(merged, builtinFields...)
 				break
 			}
 		}

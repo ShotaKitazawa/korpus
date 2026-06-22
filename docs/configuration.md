@@ -20,44 +20,31 @@ spec:
   backup:
     schedule: "*/10 * * * *"
 
-    # Set to true to disable all built-in exclusions (see below).
+    # Fields stripped from every resource before committing.
+    # A per-resource excludeFields list replaces this entirely — it is not merged.
+    defaultExcludeFields:
+      - metadata.resourceVersion
+      - metadata.managedFields
+      - metadata.generation
+      - metadata.annotations["kubectl.kubernetes.io/last-applied-configuration"]
+
+    # Set to true to disable the built-in exclude list (see below)
     disableBuiltinExcludes: false
 
-    # rules defines per-resource backup behaviour.
-    # resource: "resource.group", "resource" (core), or "*" (all resources).
-    # excludeFields is always additive — all matching rules are unioned.
-    rules:
-      # Strip fields from every resource (wildcard)
-      - resource: "*"
+    resources:
+      # Skip a resource entirely
+      - match: events
+        exclude: true
+
+      # Override excluded fields for a specific resource
+      # (replaces defaultExcludeFields for this resource)
+      - match: configmaps
         excludeFields:
           - metadata.resourceVersion
           - metadata.managedFields
-          - metadata.generation
-          - metadata.annotations["kubectl.kubernetes.io/last-applied-configuration"]
-
-      # Skip a resource type entirely
-      - resource: events
-        exclude: true
-
-      # Add extra fields to exclude for a specific resource (stacks with "*" above)
-      - resource: nodes
-        excludeFields:
-          - metadata.annotations["node.alpha.kubernetes.io/ttl"]
-
-      # Skip a specific object by namespace + name
-      - resource: cronjobs.batch
-        namespace: kube-system
-        name: backup-manifests
-        exclude: true
-
-      # Re-enable a built-in excluded resource (user rules take precedence)
-      - resource: secrets
-        exclude: false
 ```
 
-**Built-in excluded resources:** `secrets`, `events`, `leases.coordination.k8s.io`, `endpointslices.discovery.k8s.io`, `componentstatuses`, and transient cert-manager / Cilium / metrics-server resources.
-
-**Built-in excluded fields** (always appended, unless `disableBuiltinExcludes: true`): per-resource timestamp noise such as `status.reconciledAt` (ArgoCD Applications), `status.lastResync` (Grafana Operator), and `status.conditions[*].lastHeartbeatTime` (Nodes).
+**Built-in excluded resources:** `secrets`, `events`, `leases.coordination.k8s.io`, `endpointslices.discovery.k8s.io`, `componentstatuses`, and transient cert-manager resources.
 
 ## server.yaml (viewer)
 

@@ -133,19 +133,15 @@ func (r *runner) runOnce(ctx context.Context) error {
 		}
 
 		fields := config.ResolveExcludeFields(r.cfg, gvr.Resource, gvr.Group)
+		for i := range items {
+			sanitizer.DeleteFields(items[i].Object, fields)
+		}
 
 		apiGroup := gvr.Group
 		if apiGroup == "" {
 			apiGroup = "core"
 		}
 		for _, item := range items {
-			if config.IsObjectExcluded(r.cfg, gvr.Resource, gvr.Group,
-				item.GetNamespace(), item.GetName()) {
-				r.logger.Debug("skipping excluded object",
-					"resource", gvr.Resource, "namespace", item.GetNamespace(), "name", item.GetName())
-				continue
-			}
-			sanitizer.DeleteFields(item.Object, fields)
 			name := item.GetName()
 			var path string
 			if gvr.Namespaced {
