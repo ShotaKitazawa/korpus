@@ -145,6 +145,14 @@ func (r *runner) runOnce(ctx context.Context) error {
 					"resource", gvr.Resource, "namespace", item.GetNamespace(), "name", item.GetName())
 				continue
 			}
+			if excluded, err := config.IsCELObjectExcluded(r.cfg, gvr.Resource, gvr.Group, &item); err != nil {
+				r.logger.Warn("excludeIf eval error, including object",
+					"resource", gvr.Resource, "namespace", item.GetNamespace(), "name", item.GetName(), "err", err)
+			} else if excluded {
+				r.logger.Debug("skipping CEL-excluded object",
+					"resource", gvr.Resource, "namespace", item.GetNamespace(), "name", item.GetName())
+				continue
+			}
 			fields := config.ResolveExcludeFieldsForObject(r.cfg, gvr.Resource, gvr.Group,
 				item.GetNamespace(), item.GetName())
 			sanitizer.DeleteFields(item.Object, fields)

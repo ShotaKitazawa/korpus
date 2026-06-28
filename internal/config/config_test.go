@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 const sampleKorpusConfig = `
@@ -455,6 +456,151 @@ func TestLoadServer_OIDC_MissingClientID(t *testing.T) {
 	path := writeTempConfig(t, yaml)
 	_, err := LoadServer(path)
 	assert.ErrorContains(t, err, "clientId")
+}
+
+func makeUnstructured(resource, namespace, name string, ownerKind string) *unstructured.Unstructured {
+	u := &unstructured.Unstructured{}
+	u.SetNamespace(namespace)
+	u.SetName(name)
+	if ownerKind != "" {
+		trueVal := true
+		u.SetOwnerReferences([]metav1.OwnerReference{{Kind: ownerKind, Controller: &trueVal}})
+	}
+	return u
+}
+
+func TestLoadKorpus_CEL_InvalidExpression(t *testing.T) {
+	cfg := sampleKorpusConfig + `      - resource: pods
+        excludeIf: undeclaredVar == "foo"
+`
+	_, err := LoadKorpus(writeTempConfig(t, cfg))
+	assert.ErrorContains(t, err, "excludeIf")
+}
+
+func TestLoadKorpus_CEL_SyntaxError(t *testing.T) {
+	cfg := sampleKorpusConfig + `      - resource: pods
+        excludeIf: "hasOwnerKind("
+`
+	_, err := LoadKorpus(writeTempConfig(t, cfg))
+	assert.ErrorContains(t, err, "excludeIf")
+}
+
+func TestIsCELObjectExcluded_BasicTrue(t *testing.T) {
+	cfg := mustLoadKorpus(t, sampleKorpusConfig+`      - resource: jobs.batch
+        excludeIf: hasOwnerKind("CronJob")
+`)
+	item := makeUnstructured("jobs", "default", "my-job", "CronJob")
+	excluded, err := IsCELObjectExcluded(cfg, "jobs", "batch", item)
+	require.NoError(t, err)
+	assert.True(t, excluded)
+}
+
+func TestIsCELObjectExcluded_BasicFalse(t *testing.T) {
+	cfg := mustLoadKorpus(t, sampleKorpusConfig+`      - resource: jobs.batch
+        excludeIf: hasOwnerKind("CronJob")
+`)
+	item := makeUnstructured("jobs", "default", "my-job", "") // no owner
+	excluded, err := IsCELObjectExcluded(cfg, "jobs", "batch", item)
+	require.NoError(t, err)
+	assert.False(t, excluded)
+}
+
+func TestIsCELObjectExcluded_ResourcePreFilter(t *testing.T) {
+	cfg := mustLoadKorpus(t, sampleKorpusConfig+`      - resource: jobs.batch
+        excludeIf: hasOwnerKind("CronJob")
+`)
+	// Rule targets "jobs.batch" — pods are not affected
+	item := makeUnstructured("pods", "default", "my-pod", "CronJob")
+	excluded, err := IsCELObjectExcluded(cfg, "pods", "", item)
+	require.NoError(t, err)
+	assert.False(t, excluded)
+}
+
+func TestIsCELObjectExcluded_WildcardResource(t *testing.T) {
+	cfg := mustLoadKorpus(t, sampleKorpusConfig+`      - resource: "*"
+        excludeIf: isBeingDeleted()
+`)
+	item := makeUnstructured("pods", "default", "my-pod", "")
+	now := metav1.Now()
+	item.SetDeletionTimestamp(&now)
+
+	excluded, err := IsCELObjectExcluded(cfg, "pods", "", item)
+	require.NoError(t, err)
+	assert.True(t, excluded)
+}
+
+func TestIsCELObjectExcluded_NamespacePreFilter(t *testing.T) {
+	cfg := mustLoadKorpus(t, sampleKorpusConfig+`      - resource: pods
+        namespace: ci
+        excludeIf: isGenerated()
+`)
+	generated := makeUnstructured("pods", "ci", "runner-abc", "")
+	generated.SetGenerateName("runner-")
+
+	otherNS := makeUnstructured("pods", "default", "runner-abc", "")
+	otherNS.SetGenerateName("runner-")
+
+	excl, err := IsCELObjectExcluded(cfg, "pods", "", generated)
+	require.NoError(t, err)
+	assert.True(t, excl)
+
+	excl, err = IsCELObjectExcluded(cfg, "pods", "", otherNS)
+	require.NoError(t, err)
+	assert.False(t, excl) // different namespace → rule does not apply
+}
+
+func TestIsCELObjectExcluded_NoRules(t *testing.T) {
+	cfg := mustLoadKorpus(t, sampleKorpusConfig) // no excludeIf rules
+	item := makeUnstructured("pods", "default", "my-pod", "Job")
+	excluded, err := IsCELObjectExcluded(cfg, "pods", "", item)
+	require.NoError(t, err)
+	assert.False(t, excluded)
+}
+
+// excludeIf rules must not affect IsExcluded (resource-type exclusion).
+func TestIsExcluded_ExcludeIfRuleIgnored(t *testing.T) {
+	cfg := mustLoadKorpus(t, sampleKorpusConfig+`      - resource: pods
+        excludeIf: hasOwnerKind("Job")
+`)
+	// pods are not excluded at the resource-type level
+	assert.False(t, IsExcluded(cfg, "pods", ""))
+}
+
+// excludeIf rules must not contribute excludeFields.
+func TestResolveExcludeFields_ExcludeIfRuleIgnored(t *testing.T) {
+	cfg := mustLoadKorpus(t, sampleKorpusConfig+`      - resource: pods
+        excludeIf: hasOwnerKind("Job")
+        excludeFields:
+          - status.phase
+`)
+	// The excludeFields on a CEL rule should not be applied
+	fields := ResolveExcludeFieldsForObject(cfg, "pods", "", "default", "my-pod")
+	assert.NotContains(t, fields, "status.phase")
+}
+
+// disableBuiltinExcludes does not suppress user CEL rules.
+func TestIsCELObjectExcluded_NotAffectedByDisableBuiltin(t *testing.T) {
+	yaml := `
+apiVersion: korpus.io/v1alpha1
+kind: KorpusConfig
+spec:
+  git:
+    repo: https://github.com/example/backup
+    branch: main
+    author:
+      name: bot
+      email: bot@example.com
+  backup:
+    disableBuiltinExcludes: true
+    rules:
+      - resource: jobs.batch
+        excludeIf: hasOwnerKind("CronJob")
+`
+	cfg := mustLoadKorpus(t, yaml)
+	item := makeUnstructured("jobs", "default", "my-job", "CronJob")
+	excluded, err := IsCELObjectExcluded(cfg, "jobs", "batch", item)
+	require.NoError(t, err)
+	assert.True(t, excluded) // user CEL rules are unaffected by disableBuiltinExcludes
 }
 
 func TestIsBuiltinObjectExcluded(t *testing.T) {

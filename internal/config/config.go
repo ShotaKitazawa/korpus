@@ -8,9 +8,11 @@ import (
 	"time"
 
 	"github.com/ShotaKitazawa/korpus/internal/defaults"
+	"github.com/google/cel-go/cel"
 	"github.com/robfig/cron/v3"
 	"gopkg.in/yaml.v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 type TypeMeta struct {
@@ -21,7 +23,8 @@ type TypeMeta struct {
 // KorpusConfig is the configuration for the korpus backup daemon.
 type KorpusConfig struct {
 	TypeMeta `yaml:",inline"`
-	Spec     KorpusSpec `yaml:"spec"`
+	Spec     KorpusSpec      `yaml:"spec"`
+	celCtx   *celItemContext // shared context for excludeIf evaluation; set by LoadKorpus
 }
 
 type KorpusSpec struct {
@@ -86,12 +89,18 @@ type BackupConfig struct {
 // namespace/name: when set, the rule applies only to matching objects.
 // excludeFields is additive — all matching rules (wildcard + specific) are unioned.
 // resource: "*" is only meaningful for excludeFields; it is ignored by IsExcluded.
+// excludeIf: CEL expression evaluated per object; when true, the object is skipped.
+//
+// Rules with excludeIf are handled exclusively by IsCELObjectExcluded and do not
+// participate in IsExcluded, IsObjectExcluded, or ResolveExcludeFieldsForObject.
 type RuleConfig struct {
-	Resource      string   `yaml:"resource"`
-	Namespace     string   `yaml:"namespace,omitempty"`
-	Name          string   `yaml:"name,omitempty"`
-	Exclude       bool     `yaml:"exclude"`
-	ExcludeFields []string `yaml:"excludeFields,omitempty"`
+	Resource      string      `yaml:"resource"`
+	Namespace     string      `yaml:"namespace,omitempty"`
+	Name          string      `yaml:"name,omitempty"`
+	Exclude       bool        `yaml:"exclude"`
+	ExcludeFields []string    `yaml:"excludeFields,omitempty"`
+	ExcludeIf     string      `yaml:"excludeIf,omitempty"` // CEL expression; compiled at LoadKorpus time
+	program       cel.Program // nil when ExcludeIf == ""; not serialized
 }
 
 func (rc *RuleConfig) hasObjectFilter() bool {
@@ -155,6 +164,22 @@ func LoadKorpus(path string) (*KorpusConfig, error) {
 	if _, err := cron.ParseStandard(cfg.Spec.Backup.Schedule); err != nil {
 		return nil, fmt.Errorf("invalid spec.backup.schedule %q: %w", cfg.Spec.Backup.Schedule, err)
 	}
+	celCtx := &celItemContext{}
+	celEnv, err := newExcludeIfEnv(celCtx)
+	if err != nil {
+		return nil, fmt.Errorf("build CEL env: %w", err)
+	}
+	for i, rc := range cfg.Spec.Backup.Rules {
+		if rc.ExcludeIf == "" {
+			continue
+		}
+		prog, err := compileExcludeIf(celEnv, rc.ExcludeIf)
+		if err != nil {
+			return nil, fmt.Errorf("spec.backup.rules[%d].excludeIf: %w", i, err)
+		}
+		cfg.Spec.Backup.Rules[i].program = prog
+	}
+	cfg.celCtx = celCtx
 	return &cfg, nil
 }
 
@@ -222,11 +247,11 @@ func resourceKey(resource, group string) string {
 // IsExcluded reports whether a resource type should be skipped entirely.
 // User rules take precedence over built-in exclusions, so setting exclude: false
 // on a built-in resource re-enables backup for that resource type.
-// Rules with resource: "*" or an object filter (namespace/name) are ignored here.
+// Rules with resource: "*", an object filter (namespace/name), or excludeIf are ignored here.
 func IsExcluded(cfg *KorpusConfig, resource, group string) bool {
 	key := resourceKey(resource, group)
 	for _, rc := range cfg.Spec.Backup.Rules {
-		if rc.Resource == "*" || rc.hasObjectFilter() {
+		if rc.Resource == "*" || rc.hasObjectFilter() || rc.ExcludeIf != "" {
 			continue
 		}
 		if rc.Resource == key || rc.Resource == resource {
@@ -245,10 +270,11 @@ func IsExcluded(cfg *KorpusConfig, resource, group string) bool {
 
 // IsObjectExcluded reports whether a specific object should be skipped.
 // Called per-item after listing, complementing the GVR-level IsExcluded.
+// Rules with excludeIf are handled by IsCELObjectExcluded instead.
 func IsObjectExcluded(cfg *KorpusConfig, resource, group, namespace, name string) bool {
 	key := resourceKey(resource, group)
 	for _, rc := range cfg.Spec.Backup.Rules {
-		if !rc.hasObjectFilter() {
+		if !rc.hasObjectFilter() || rc.ExcludeIf != "" {
 			continue
 		}
 		if rc.Resource != "*" && rc.Resource != key && rc.Resource != resource {
@@ -285,15 +311,51 @@ func IsBuiltinObjectExcluded(cfg *KorpusConfig, resource, group string, ownerRef
 	return false
 }
 
+// IsCELObjectExcluded evaluates user-defined excludeIf expressions against item.
+// Returns (true, nil) if any matching rule's expression evaluates to true.
+// Returns (false, err) on runtime evaluation errors; the caller should log and include
+// the object to preserve information-base completeness.
+func IsCELObjectExcluded(cfg *KorpusConfig, resource, group string, item *unstructured.Unstructured) (bool, error) {
+	key := resourceKey(resource, group)
+	for i := range cfg.Spec.Backup.Rules {
+		rc := &cfg.Spec.Backup.Rules[i]
+		if rc.program == nil {
+			continue
+		}
+		if rc.Resource != "*" && rc.Resource != key && rc.Resource != resource {
+			continue
+		}
+		if rc.Namespace != "" && rc.Namespace != item.GetNamespace() {
+			continue
+		}
+		if rc.Name != "" && rc.Name != item.GetName() {
+			continue
+		}
+		excluded, err := evalExcludeIf(rc.program, cfg.celCtx, resource, group, item)
+		if err != nil {
+			return false, fmt.Errorf("rules[%d].excludeIf: %w", i, err)
+		}
+		if excluded {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // ResolveExcludeFieldsForObject returns the field paths to strip for a specific object.
 // All matching rules contribute additively in order:
 //  1. wildcard ("*") and resource-type rules (no object filter)
 //  2. object-level rules whose namespace/name match the given object
 //  3. built-in field exclusions (unless disableBuiltinExcludes is true)
+//
+// Rules with excludeIf are skipped; they do not contribute excludeFields.
 func ResolveExcludeFieldsForObject(cfg *KorpusConfig, resource, group, namespace, name string) []string {
 	key := resourceKey(resource, group)
 	var fields []string
 	for _, rc := range cfg.Spec.Backup.Rules {
+		if rc.ExcludeIf != "" {
+			continue
+		}
 		if rc.hasObjectFilter() {
 			if rc.Resource != "*" && rc.Resource != key && rc.Resource != resource {
 				continue
