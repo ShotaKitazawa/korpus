@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 255" width="200" height="255">
+  <!-- Badge background -->
+  <rect x="0" y="0" width="200" height="250" rx="16" fill="#1e3a5f"/>
+
+  <!-- Back document -->
+  <rect x="36" y="23" width="108" height="138" rx="6" fill="#2d4a6b" stroke="#4a9eed" stroke-width="1"/>
+
+  <!-- Middle document -->
+  <rect x="46" y="36" width="108" height="138" rx="6" fill="#a5d8ff" stroke="#4a9eed" stroke-width="1"/>
+
+  <!-- Front document -->
+  <rect x="56" y="49" width="108" height="138" rx="6" fill="#e0f0ff" stroke="#4a9eed" stroke-width="2"/>
+
+  <!-- Content lines on front document -->
+  <rect x="70" y="68" width="76" height="6" rx="3" fill="#4a9eed"/>
+  <rect x="70" y="83" width="60" height="6" rx="3" fill="#4a9eed"/>
+  <rect x="70" y="98" width="70" height="6" rx="3" fill="#4a9eed"/>
+  <rect x="70" y="113" width="50" height="6" rx="3" fill="#4a9eed"/>
+  <rect x="70" y="128" width="64" height="6" rx="3" fill="#4a9eed"/>
+
+  <!-- Wordmark -->
+  <text x="100" y="222" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="26" font-weight="500" letter-spacing="2" fill="#a5d8ff">korpus</text>
+</svg>
