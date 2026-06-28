@@ -138,7 +138,9 @@ func (r *runner) runOnce(ctx context.Context) error {
 		}
 		for _, item := range items {
 			if config.IsObjectExcluded(r.cfg, gvr.Resource, gvr.Group,
-				item.GetNamespace(), item.GetName()) {
+				item.GetNamespace(), item.GetName()) ||
+				config.IsBuiltinObjectExcluded(r.cfg, gvr.Resource, gvr.Group,
+					item.GetOwnerReferences()) {
 				r.logger.Debug("skipping excluded object",
 					"resource", gvr.Resource, "namespace", item.GetNamespace(), "name", item.GetName())
 				continue
