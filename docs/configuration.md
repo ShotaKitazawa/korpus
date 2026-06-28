@@ -53,11 +53,76 @@ spec:
       # Re-enable a built-in excluded resource (user rules take precedence)
       - resource: secrets
         exclude: false
+
+      # excludeIf: CEL expression evaluated per object; skips the object when true.
+      # Compiled at startup — invalid expressions cause a startup error.
+      - resource: jobs.batch
+        excludeIf: hasOwnerKind("CronJob")  # skip CronJob-generated Jobs
+
+      # namespace/name act as optional pre-filters for excludeIf rules
+      - resource: pods
+        namespace: ci
+        excludeIf: isGenerated()
+
+      # Wildcard applies to every resource type
+      - resource: "*"
+        excludeIf: isBeingDeleted()
 ```
 
 **Built-in excluded resources:** `secrets`, `events`, `leases.coordination.k8s.io`, `endpointslices.discovery.k8s.io`, `componentstatuses`, and transient cert-manager / Cilium / metrics-server resources.
 
 **Built-in excluded fields** (always appended, unless `disableBuiltinExcludes: true`): per-resource timestamp noise such as `status.reconciledAt` (ArgoCD Applications), `status.lastResync` (Grafana Operator), and `status.conditions[*].lastHeartbeatTime` (Nodes).
+
+### `excludeIf` — CEL expression for per-object exclusion
+
+`excludeIf` accepts a [CEL](https://cel.dev/) expression that is evaluated for each object. When the expression returns `true`, the object is excluded from the information base. The expression is compiled at startup; a syntax or type error causes a startup error.
+
+Rules with `excludeIf` are handled separately from `exclude` and `excludeFields` rules and do not interact with them.
+
+**Activation variables:**
+
+| Variable | Type | Description |
+|---|---|---|
+| `resource` | `string` | GVR resource name, e.g. `"pods"` |
+| `group` | `string` | API group, e.g. `"batch"`, `""` for core resources |
+| `ns` | `string` | Object namespace (empty for cluster-scoped resources) |
+| `name` | `string` | Object name |
+
+**Extension functions:**
+
+| Function | Returns | Description |
+|---|---|---|
+| `hasOwnerKind(kind)` | `bool` | True if any `ownerReference` has `kind == kind` |
+| `hasOwnerName(name)` | `bool` | True if any `ownerReference` has `name == name` |
+| `isControlled()` | `bool` | True if any `ownerReference` has `controller: true` |
+| `isGenerated()` | `bool` | True if `generateName` is non-empty (object created from a template) |
+| `hasLabel(key)` | `bool` | True if the label key is present |
+| `labelValue(key)` | `string` | Label value, or `""` if absent |
+| `hasAnnotation(key)` | `bool` | True if the annotation key is present |
+| `annotationValue(key)` | `string` | Annotation value, or `""` if absent |
+| `hasFinalizer(key)` | `bool` | True if the finalizer key is present |
+| `isBeingDeleted()` | `bool` | True if `deletionTimestamp` is set |
+
+**Runtime evaluation errors** (e.g. unexpected panics in extension logic) cause the object to be **included** and logged as a warning, preserving information-base completeness.
+
+**Examples:**
+
+```yaml
+# Exclude CronJob-generated Jobs (same effect as the built-in rule)
+- resource: jobs.batch
+  excludeIf: hasOwnerKind("CronJob")
+
+# Exclude any object currently being garbage-collected
+- resource: "*"
+  excludeIf: isBeingDeleted()
+
+# Combine activation variables and functions
+- resource: jobs.batch
+  excludeIf: |
+    group == "batch" &&
+    hasOwnerKind("CronJob") &&
+    !hasAnnotation("audit.example.com/retain")
+```
 
 ## server.yaml (viewer)
 
