@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const sampleKorpusConfig = `
@@ -31,6 +32,13 @@ spec:
         excludeFields:
           - metadata.resourceVersion
 `
+
+func mustLoadKorpus(t *testing.T, content string) *KorpusConfig {
+	t.Helper()
+	cfg, err := LoadKorpus(writeTempConfig(t, content))
+	require.NoError(t, err)
+	return cfg
+}
 
 func writeTempConfig(t *testing.T, content string) string {
 	t.Helper()
@@ -447,4 +455,25 @@ func TestLoadServer_OIDC_MissingClientID(t *testing.T) {
 	path := writeTempConfig(t, yaml)
 	_, err := LoadServer(path)
 	assert.ErrorContains(t, err, "clientId")
+}
+
+func TestIsBuiltinObjectExcluded(t *testing.T) {
+	cfg := mustLoadKorpus(t, sampleKorpusConfig)
+
+	ownerRef := func(kind string) []metav1.OwnerReference {
+		return []metav1.OwnerReference{{Kind: kind}}
+	}
+
+	// CronJob-owned Job is excluded
+	assert.True(t, IsBuiltinObjectExcluded(cfg, "jobs", "batch", ownerRef("CronJob")))
+	// Job-owned Pod is excluded
+	assert.True(t, IsBuiltinObjectExcluded(cfg, "pods", "", ownerRef("Job")))
+	// Deployment-owned Pod is NOT excluded
+	assert.False(t, IsBuiltinObjectExcluded(cfg, "pods", "", ownerRef("ReplicaSet")))
+	// Manual Job (no owner) is NOT excluded
+	assert.False(t, IsBuiltinObjectExcluded(cfg, "jobs", "batch", nil))
+	// disableBuiltinExcludes bypasses this check
+	cfgDisabled := mustLoadKorpus(t, sampleKorpusConfig+`    disableBuiltinExcludes: true
+`)
+	assert.False(t, IsBuiltinObjectExcluded(cfgDisabled, "jobs", "batch", ownerRef("CronJob")))
 }

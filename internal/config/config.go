@@ -10,6 +10,7 @@ import (
 	"github.com/ShotaKitazawa/korpus/internal/defaults"
 	"github.com/robfig/cron/v3"
 	"gopkg.in/yaml.v3"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type TypeMeta struct {
@@ -233,8 +234,8 @@ func IsExcluded(cfg *KorpusConfig, resource, group string) bool {
 		}
 	}
 	if !cfg.Spec.Backup.DisableBuiltinExcludes {
-		for _, r := range defaults.BuiltinExcludeResources {
-			if r == key || r == resource {
+		for _, e := range defaults.BuiltinExcludeResources {
+			if e.Resource == key || e.Resource == resource {
 				return true
 			}
 		}
@@ -256,6 +257,29 @@ func IsObjectExcluded(cfg *KorpusConfig, resource, group, namespace, name string
 		if (rc.Namespace == "" || rc.Namespace == namespace) &&
 			(rc.Name == "" || rc.Name == name) {
 			return rc.Exclude
+		}
+	}
+	return false
+}
+
+// IsBuiltinObjectExcluded reports whether an individual object should be skipped based
+// on builtin ownerReference rules. It complements IsExcluded (resource-level) and
+// IsObjectExcluded (user config-level) by capturing execution artifacts that can only
+// be identified via K8s ownership semantics (e.g. Jobs owned by CronJobs).
+// Respects disableBuiltinExcludes.
+func IsBuiltinObjectExcluded(cfg *KorpusConfig, resource, group string, ownerRefs []metav1.OwnerReference) bool {
+	if cfg.Spec.Backup.DisableBuiltinExcludes {
+		return false
+	}
+	key := resourceKey(resource, group)
+	for _, e := range defaults.BuiltinExcludeObjects {
+		if e.Resource != resource && e.Resource != key {
+			continue
+		}
+		for _, ref := range ownerRefs {
+			if ref.Kind == e.OwnerKind {
+				return true
+			}
 		}
 	}
 	return false
