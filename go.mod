@@ -8,7 +8,7 @@ require (
 	github.com/go-faster/errors v0.7.1
 	github.com/go-faster/jx v1.2.0
 	github.com/go-git/go-git/v5 v5.19.1
-	github.com/google/cel-go v0.28.1
+	github.com/google/cel-go v0.32.0
 	github.com/mark3labs/mcp-go v0.54.1
 	github.com/ogen-go/ogen v1.20.3
 	github.com/prometheus/client_golang v1.23.2
