@@ -5,7 +5,7 @@ go 1.26.1
 require (
 	github.com/coreos/go-oidc/v3 v3.18.0
 	github.com/felixge/fgprof v0.9.5
-	github.com/go-faster/errors v0.7.1
+	github.com/go-faster/errors v0.8.0
 	github.com/go-faster/jx v1.2.0
 	github.com/go-git/go-git/v5 v5.19.1
 	github.com/google/cel-go v0.28.1
